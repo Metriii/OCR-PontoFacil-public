@@ -1,0 +1,19 @@
+# Ambiente virtual
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+
+# Segredos (token do AI Studio)
+token.txt
+.env
+
+# Saidas geradas
+resultado_ocr.json
+*.xlsx
+
+# Imagens da folha de ponto (dados pessoais)
+*.jpg
+*.jpeg
+*.png
