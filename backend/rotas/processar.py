@@ -83,7 +83,14 @@ async def processar(
                 arquivo=nome_amigavel,
                 funcionario=folha.funcionario,
                 referencia=folha.referencia,
-                status="revisar" if any(r.revisar for r in folha.registros) else "ok",
+                status=(
+                    "revisar"
+                    if any(
+                        r.confianca is None or r.confianca < 0.95
+                        for r in folha.registros
+                    )
+                    else "ok"
+                ),
                 url=f"/download/{nome_armazenado}",
             )
         )

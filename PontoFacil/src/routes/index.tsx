@@ -127,7 +127,7 @@ function Index() {
     } finally { setLoading(false); }
   }
 
-  const precisaRevisao = registros.filter(needsReview).length;
+  const precisaRevisao = res?.planilhas?.filter((p) => p.status === "revisar").length ?? 0;
   const groups = groupItems(items);
 
   return (
