@@ -1,0 +1,12 @@
+# Dependencias do backend HTTP (API FastAPI sobre o MCP do PaddleOCR).
+# Instale junto com o requirements.txt da raiz:
+#     pip install -r requirements.txt -r backend/requirements.txt
+
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+
+# Fala com o servidor MCP do PaddleOCR
+mcp>=2.3.0
+
+# Geracao da planilha .xlsx
+openpyxl>=3.1.0

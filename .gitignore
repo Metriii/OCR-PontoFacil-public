@@ -13,6 +13,13 @@ token.txt
 resultado_ocr.json
 *.xlsx
 
+# Backend (planilhas geradas para download)
+backend/_out/
+
+# Frontend (Node)
+node_modules/
+.frontend-build/
+
 # Imagens da folha de ponto (dados pessoais)
 *.jpg
 *.jpeg
