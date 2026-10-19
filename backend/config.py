@@ -32,6 +32,9 @@ CORS_ORIGINS = [
 # Limite de tamanho por arquivo enviado (bytes). Padrao: 20 MB.
 MAX_ARQUIVO_BYTES = int(os.getenv("PONTOFACIL_MAX_ARQUIVO_MB", "20")) * 1024 * 1024
 
+# Imagens menores que isso sao ampliadas antes do OCR (0 desliga).
+LARGURA_MINIMA_OCR = int(os.getenv("PONTOFACIL_OCR_LARGURA_MINIMA", "1200"))
+
 EXTENSOES_IMAGEM = {".jpg", ".jpeg", ".png", ".webp"}
 EXTENSOES_ZIP = {".zip"}
 
@@ -66,6 +69,21 @@ def modelo() -> str:
 
 def fonte() -> str:
     return os.getenv("PADDLEOCR_MCP_PPOCR_SOURCE", FONTE_PADRAO)
+
+
+def runtime_params_ocr() -> dict[str, object]:
+    """Parametros do PaddleOCR-VL.
+
+    O modo "tabela" (padrao) forca o prompt de tabela, preservando as colunas
+    de horario (Entrada/Saida/Entrada/Saida) e o cabecalho com nome/periodo.
+    Imagens pequenas sao ampliadas antes do OCR (ver ``LARGURA_MINIMA_OCR``).
+
+    Defina PONTOFACIL_OCR_MODO=layout para voltar ao comportamento anterior.
+    """
+    modo = os.getenv("PONTOFACIL_OCR_MODO", "tabela").strip().lower()
+    if modo in {"layout", "auto", "documento"}:
+        return {}
+    return {"prompt_label": "table"}
 
 
 def ambiente_mcp() -> dict[str, str]:

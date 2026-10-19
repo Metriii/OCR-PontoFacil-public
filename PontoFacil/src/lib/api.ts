@@ -13,6 +13,7 @@ export type Registro = {
   saida: string | null;
   confianca: number | null; // 0..1
   revisar?: boolean;
+  observacao?: string | null;
 };
 
 export type Planilha = {

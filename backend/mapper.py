@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import sys
+from datetime import date
 from pathlib import Path
 
 _RAIZ = Path(__file__).resolve().parent.parent
@@ -18,7 +19,7 @@ from gerar_excel import _hora_total  # noqa: E402
 
 from .modelos import Registro  # noqa: E402
 
-_HORA_RE = re.compile(r"(\d{1,2})[:h](\d{2})")
+_HORA_RE = re.compile(r"(?<![\d$])(\d{1,2})[:h.](\d{2})")
 _VAZIOS = {"", "-", "--", "—", "——", "---", "n/a", "na"}
 _DATA_RE = re.compile(r"(\d{2})/(\d{2})/(\d{4})")
 
@@ -32,6 +33,22 @@ CABECALHO_EXCEL = [
 ]
 
 LIMIAR_REVISAO = 0.7
+
+ENTRADA_PADRAO = "08:00"
+OBSERVACAO_ENTRADA_PADRAO = (
+    "Entrada preenchida com o horário padrão de 08:00 devido à "
+    "ilegibilidade do registro original."
+)
+
+_DIAS_SEMANA = (
+    "segunda-feira",
+    "terça-feira",
+    "quarta-feira",
+    "quinta-feira",
+    "sexta-feira",
+    "sábado",
+    "domingo",
+)
 
 
 def _normalizar_hora(valor: str) -> str | None:
@@ -47,6 +64,32 @@ def _normalizar_hora(valor: str) -> str | None:
     return f"{h:02d}:{mi:02d}"
 
 
+def _minutos(valor: str | None) -> int | None:
+    if not valor:
+        return None
+    m = _HORA_RE.search(valor)
+    return int(m.group(1)) * 60 + int(m.group(2)) if m else None
+
+
+def _horarios_inconsistentes(
+    entrada: str | None,
+    saida_almoco: str | None,
+    volta_almoco: str | None,
+    saida: str | None,
+) -> bool:
+    """Detecta leituras fora de ordem (indicio de coluna deslocada)."""
+    pontos = [
+        _minutos(entrada),
+        _minutos(saida_almoco),
+        _minutos(volta_almoco),
+        _minutos(saida),
+    ]
+    presentes = [p for p in pontos if p is not None]
+    if len(presentes) < 2:
+        return False
+    return any(a >= b for a, b in zip(presentes, presentes[1:]))
+
+
 def _mes_ano(referencia: str | None) -> tuple[str, str] | None:
     if not referencia:
         return None
@@ -54,6 +97,18 @@ def _mes_ano(referencia: str | None) -> tuple[str, str] | None:
     if not m:
         return None
     return m.group(2), m.group(3)  # mm, yyyy
+
+
+def _dia_semana_calculado(dia: str, referencia: str | None) -> str | None:
+    """Dia da semana em portugues a partir da data real do cartao."""
+    mes_ano = _mes_ano(referencia)
+    if not mes_ano:
+        return None
+    mm, yyyy = mes_ano
+    try:
+        return _DIAS_SEMANA[date(int(yyyy), int(mm), int(dia)).weekday()]
+    except (TypeError, ValueError):
+        return None
 
 
 def _slug(texto: str | None) -> str:
@@ -69,16 +124,35 @@ def map_registro(
     funcionario: str | None,
 ) -> tuple[Registro, list[str]]:
     dia = linha[0].strip()
-    semana = (linha[1].strip() if len(linha) > 1 else "") or ""
+    semana_ocr = (linha[1].strip() if len(linha) > 1 else "") or ""
+    semana = _dia_semana_calculado(dia, referencia) or semana_ocr
     entrada = _normalizar_hora(linha[2] if len(linha) > 2 else "")
     saida_almoco = _normalizar_hora(linha[3] if len(linha) > 3 else "")
     volta_almoco = _normalizar_hora(linha[4] if len(linha) > 4 else "")
     saida = _normalizar_hora(linha[5] if len(linha) > 5 else "")
 
+    observacao: str | None = None
+    entrada_padrao = False
+    # So usa o padrao quando ha evidencia de jornada no dia (outro horario
+    # registrado); dias em branco, folgas e faltas permanecem nulos.
+    if entrada is None and any(
+        hora is not None for hora in (saida_almoco, volta_almoco, saida)
+    ):
+        entrada = ENTRADA_PADRAO
+        entrada_padrao = True
+        observacao = OBSERVACAO_ENTRADA_PADRAO
+
     pontas = [entrada, saida_almoco, volta_almoco, saida]
     presentes = sum(1 for p in pontas if p is not None)
     confianca = round(presentes / 4, 2)
-    revisar = presentes < 4 or confianca < LIMIAR_REVISAO
+    if entrada_padrao:
+        confianca = min(confianca, 0.5)
+    inconsistente = _horarios_inconsistentes(
+        entrada, saida_almoco, volta_almoco, saida
+    )
+    if inconsistente:
+        confianca = min(confianca, LIMIAR_REVISAO)
+    revisar = presentes < 4 or confianca < LIMIAR_REVISAO or inconsistente
 
     mes_ano = _mes_ano(referencia)
     if mes_ano:
@@ -99,6 +173,7 @@ def map_registro(
         saida=saida,
         confianca=confianca,
         revisar=revisar,
+        observacao=observacao,
     )
 
     hora_total = _hora_total(

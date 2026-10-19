@@ -12,6 +12,8 @@ consiga continuar o projeto sem ficar perdida**. Cada assunto fica em um arquivo
 | [`03-realizado.md`](./03-realizado.md) | O que foi executado na sessão |
 | [`04-resposta-final.md`](./04-resposta-final.md) | Resposta final da IA + próximos passos |
 | [`05-backend-http.md`](./05-backend-http.md) | Sessão: criação da API FastAPI (`backend/`) e conexão com o front |
+| [`06-correcao-ocr-layout.md`](./06-correcao-ocr-layout.md) | Sessão: correção do OCR (colunas deslocadas) |
+| [`07-atualziarpontos.md`](./07-atualziarpontos.md) | Sessão: implementação de `docs/atualziarpontos.md` |
 
 ## Como usar (próxima sessão)
 

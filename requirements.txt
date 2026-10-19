@@ -4,6 +4,9 @@ mcp>=1.5.0
 # Geracao da planilha .xlsx
 openpyxl>=3.1.0
 
+# Ampliacao de fotos pequenas antes do OCR
+Pillow>=10.0.0
+
 # Type stubs do openpyxl (usados pelo type checker Pyrefly do editor)
 types-openpyxl>=3.1.5
 

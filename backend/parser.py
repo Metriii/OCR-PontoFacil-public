@@ -18,7 +18,11 @@ if str(_RAIZ) not in sys.path:
 from gerar_excel import _html_tabelas  # noqa: E402
 
 _DIA_RE = re.compile(r"\d{1,2}")
-_COLABORADOR_RE = re.compile(r"^\d{3,}\s*-\s*(.+)$")
+_COLABORADOR_RE = re.compile(
+    r"(?:^|\s)\d{3,}\s*-\s*(.+?)"
+    r"(?=\s+(?:Departamento|Fun[cç][aã]o|CTPS|Admiss[aã]o|Tipo de Escala)\b|$)",
+    re.IGNORECASE,
+)
 _PERIODO_RE = re.compile(
     r"(\d{2}/\d{2}/\d{4})\s*a\s*(\d{2}/\d{2}/\d{4})"
 )
@@ -51,7 +55,7 @@ def linhas_dia(grid: list[list[str]]) -> list[list[str]]:
 def nome_colaborador(grid: list[list[str]]) -> str | None:
     for linha in grid:
         for celula in linha:
-            m = _COLABORADOR_RE.match(celula.strip())
+            m = _COLABORADOR_RE.search(celula.strip())
             if m:
                 return m.group(1).strip()
     return None

@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import base64
 from contextlib import asynccontextmanager
+from io import BytesIO
 from typing import Any
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from PIL import Image, ImageOps
 
 from . import config
 
@@ -49,6 +51,35 @@ def _extrair_texto(resultado: Any) -> str:
     return "\n".join(partes).strip()
 
 
+def _preparar_imagem(imagem_bytes: bytes) -> bytes:
+    """Amplia fotos pequenas para o OCR nao perder colunas de horario.
+
+    Folhas fotografadas com menos de ``config.LARGURA_MINIMA_OCR`` pixels de
+    largura costumam perder a primeira coluna e/ou confundir os digitos. A
+    ampliacao (ate 3x, JPEG) melhora a leitura sem alterar a imagem original.
+    """
+    limite = config.LARGURA_MINIMA_OCR
+    if limite <= 0:
+        return imagem_bytes
+    try:
+        with Image.open(BytesIO(imagem_bytes)) as imagem:
+            if imagem.width >= limite:
+                return imagem_bytes
+            imagem = ImageOps.exif_transpose(imagem)
+            escala = min(3.0, limite / imagem.width)
+            if escala <= 1.0:
+                return imagem_bytes
+            tamanho = (round(imagem.width * escala), round(imagem.height * escala))
+            ampliada = imagem.resize(tamanho, Image.Resampling.LANCZOS)
+            if ampliada.mode not in ("RGB", "L"):
+                ampliada = ampliada.convert("RGB")
+            buffer = BytesIO()
+            ampliada.save(buffer, format="JPEG", quality=92)
+            return buffer.getvalue()
+    except (OSError, ValueError):
+        return imagem_bytes
+
+
 async def ocr_imagem(sessao: ClientSession, imagem_bytes: bytes) -> str:
     tools = (await sessao.list_tools()).tools
     nome = _escolher_tool(tools)
@@ -56,6 +87,7 @@ async def ocr_imagem(sessao: ClientSession, imagem_bytes: bytes) -> str:
     schema = getattr(tool, "input_schema", None) or getattr(tool, "inputSchema", None)
     props = schema.get("properties", {}) if isinstance(schema, dict) else {}
 
+    imagem_bytes = _preparar_imagem(imagem_bytes)
     argumentos: dict[str, Any] = {
         "input_data": base64.b64encode(imagem_bytes).decode("ascii")
     }
@@ -63,6 +95,10 @@ async def ocr_imagem(sessao: ClientSession, imagem_bytes: bytes) -> str:
         argumentos["output_mode"] = "detailed" if nome == "ocr" else "simple"
     if "return_images" in props:
         argumentos["return_images"] = False
+    if "runtime_params" in props:
+        params = config.runtime_params_ocr()
+        if params:
+            argumentos["runtime_params"] = params
 
     resultado = await sessao.call_tool(nome, argumentos)
     erro = getattr(resultado, "is_error", None)

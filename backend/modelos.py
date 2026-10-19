@@ -16,6 +16,7 @@ class Registro(BaseModel):
     saida: str | None = None
     confianca: float | None = None
     revisar: bool = False
+    observacao: str | None = None
 
 
 class Planilha(BaseModel):
