@@ -3,6 +3,9 @@
 Sessão de 2026-10-20. Registro literal dos prompts enviados hoje e das decisões
 auxiliares tomadas durante a execução.
 
+> **Modo da sessão:** os prompts 1 a 6 foram enviados enquanto o chat estava em
+> **modo plano**. O prompt 7 já foi enviado em **modo build**.
+
 ---
 
 ## Prompt 1 — Continuação
@@ -41,6 +44,16 @@ apagando os arquivos individuais.
 ## Prompt 6 — Registro na pasta memória
 
 > vc só esqueceu de armazenar na pasta memoria os prompts de execução de hj
+
+**Modo:** plano.
+
+---
+
+## Prompt 7 — Registro dos prompts do modo plano
+
+> anote os que estavam no modo plano
+
+**Modo:** build.
 
 ---
 
