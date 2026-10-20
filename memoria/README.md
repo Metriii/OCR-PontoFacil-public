@@ -16,6 +16,7 @@ consiga continuar o projeto sem ficar perdida**. Cada assunto fica em um arquivo
 | [`07-atualziarpontos.md`](./07-atualziarpontos.md) | Sessão: implementação de `docs/atualziarpontos.md` |
 | [`08-decisao-proximo-passo.md`](./08-decisao-proximo-passo.md) | Pergunta sobre a proxima pendencia + resposta (subir no GitHub) |
 | [`09-prompts-execucao-2026-10-20.md`](./09-prompts-execucao-2026-10-20.md) | Sessão: prompts de execução e decisões de 2026-10-20 |
+| [`10-plano-integracao-central-ponto.md`](./10-plano-integracao-central-ponto.md) | Plano futuro: Central de ponto + integração por modelo |
 
 ## Como usar (próxima sessão)
 
