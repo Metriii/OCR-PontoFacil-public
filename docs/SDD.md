@@ -136,15 +136,7 @@ Processa um lote de arquivos.
       "revisar": true
     }
   ],
-  "planilhas": [
-    {
-      "arquivo": "ALESSANY.xlsx",
-      "funcionario": "ALESSANY EDUARDA ANDRADE COSTA DA CONCEIÇÃO",
-      "referencia": "01/08/2026 a 31/08/2026",
-      "status": "ok",
-      "url": "/download/ALESSANY.xlsx"
-    }
-  ],
+  "planilhas": [],
   "consolidado": {
     "arquivo": "consolidado.xlsx",
     "funcionario": null,
@@ -202,7 +194,7 @@ type ResultadoProcessamento = {
   total_cartoes: number;
   processados: number;
   registros: Registro[];
-  planilhas: Planilha[];
+  planilhas: Planilha[]; // vazio: a API disponibiliza apenas o consolidado
   consolidado?: Planilha | null;
 };
 ```
@@ -293,11 +285,11 @@ Backend FastAPI
   │  para cada imagem: paddleocr_vl → markdown com <table>
   │  parser HTML → extrai linhas
   │  mapper 4-pontas → Registro[]
-  │  gerar_excel → 1 aba/imagem + consolidado (.xlsx)
+  │  gerar_excel → consolidado (.xlsx, 1 aba/imagem)
   ▼
-Resposta JSON (ResultadoProcessamento)
+Resposta JSON (ResultadoProcessamento, apenas `consolidado`)
   ▼
-Frontend: estatísticas + tabela de revisão + botões "Baixar Excel"
+Frontend: estatísticas + tabela de revisão + botão "Baixar Excel"
 ```
 
 ### 8.2 Fluxo de download

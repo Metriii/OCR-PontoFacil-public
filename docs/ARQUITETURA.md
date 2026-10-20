@@ -85,7 +85,7 @@ backend/
 │   ├── ocr.py              # chama paddleocr_vl -> markdown
 │   ├── parser.py           # HTML/markdown -> linhas (reuso de gerar_excel.py)
 │   ├── mapper.py           # linhas -> Registro[] (4 pontas + confiança)
-│   ├── excel.py            # gera .xlsx (1 aba/folha + consolidado)
+│   ├── excel.py            # gera o consolidado (.xlsx, 1 aba/folha)
 │   └── storage.py          # salva/recupera arquivos p/ download
 └── modelos.py              # DTOs (Registro, Planilha, ResultadoProcessamento)
 ```
@@ -96,7 +96,7 @@ backend/
 | `ocr` | bytes da imagem | markdown com `<table>` |
 | `parser` | markdown | grid de células (linhas) |
 | `mapper` | grid + metadados da folha | `Registro[]` (+ heurística de confiança) |
-| `excel` | `Registro[]` por folha | arquivo(s) `.xlsx` + consolidado |
+| `excel` | `Registro[]` por folha | consolidado `.xlsx` (1 aba por folha) |
 | `storage` | arquivo gerado | URL `/download/{arquivo}` |
 
 ### 3.2 Frontend (existente)

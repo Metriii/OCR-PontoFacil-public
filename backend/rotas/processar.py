@@ -70,48 +70,27 @@ async def processar(
 
     folhas, _avisos = await servico.processar_folhas(imagens)
 
-    registros: list[Registro] = []
-    planilhas: list[Planilha] = []
-
-    for folha in folhas:
-        nome_amigavel = _nome_seguro(folha.funcionario or folha.nome)
-        nome_armazenado = _armazenar(
-            _xlsx_bytes(excel.gerar_xlsx_folha, folha), nome_amigavel
-        )
-        planilhas.append(
-            Planilha(
-                arquivo=nome_amigavel,
-                funcionario=folha.funcionario,
-                referencia=folha.referencia,
-                status=(
-                    "revisar"
-                    if any(
-                        r.confianca is None or r.confianca < 0.95
-                        for r in folha.registros
-                    )
-                    else "ok"
-                ),
-                url=f"/download/{nome_armazenado}",
-            )
-        )
-        registros.extend(folha.registros)
+    registros: list[Registro] = [
+        registro for folha in folhas for registro in folha.registros
+    ]
 
     consolidado = None
     if folhas:
         nome_consolidado = _nome_seguro("consolidado")
+        nome_armazenado = _armazenar(
+            _xlsx_bytes(excel.gerar_xlsx_consolidado, folhas), nome_consolidado
+        )
+        excel.limpar_planilhas_individuais(config.DIR_SAIDA)
         consolidado = Planilha(
             arquivo=nome_consolidado,
             status="ok",
-            url="/download/"
-            + _armazenar(
-                _xlsx_bytes(excel.gerar_xlsx_consolidado, folhas), nome_consolidado
-            ),
+            url=f"/download/{nome_armazenado}",
         )
 
     return ResultadoProcessamento(
         total_cartoes=len(imagens),
         processados=len(folhas),
         registros=registros,
-        planilhas=planilhas,
+        planilhas=[],
         consolidado=consolidado,
     )

@@ -74,13 +74,15 @@ async def processar_folhas(
                 continue
 
             funcionario = parser.nome_colaborador(grid)
-            referencia = parser.referencia(grid)
+            referencia = parser.referencia(grid, markdown)
             linhas = parser.linhas_dia(grid)
 
             registros = []
             linhas_excel = []
             for i, linha in enumerate(linhas):
-                registro, linha_excel = map_registro(linha, i, referencia, funcionario)
+                registro, linha_excel = map_registro(
+                    linha, i, referencia, funcionario
+                )
                 registros.append(registro)
                 linhas_excel.append(linha_excel)
 

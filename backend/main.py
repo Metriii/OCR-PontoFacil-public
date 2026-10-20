@@ -18,7 +18,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import config
+from . import config, excel
 from .rotas import download, processar
 
 logging.basicConfig(level=logging.INFO)
@@ -44,6 +44,7 @@ app.include_router(download.router)
 @app.on_event("startup")
 def _startup() -> None:
     config.garantir_diretorios()
+    excel.limpar_planilhas_individuais(config.DIR_SAIDA)
 
 
 @app.get("/health")

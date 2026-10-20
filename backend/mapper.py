@@ -1,7 +1,7 @@
 """Mapeia as linhas da folha de ponto para o contrato do frontend.
 
 Regra de negocio: **4 pontas por linha** -> usa os dois primeiros pares
-Entrada/Saida (celulas 2..5); os pares extras (6,7) sao ignorados.
+Entrada/Saida detectados pelo conteudo da linha; os pares extras sao ignorados.
 """
 
 from __future__ import annotations
@@ -15,7 +15,11 @@ _RAIZ = Path(__file__).resolve().parent.parent
 if str(_RAIZ) not in sys.path:
     sys.path.insert(0, str(_RAIZ))
 
-from gerar_excel import _hora_total  # noqa: E402
+from gerar_excel import (  # noqa: E402
+    _corrigir_prefixo_20,
+    _hora_total,
+    separar_linha,
+)
 
 from .modelos import Registro  # noqa: E402
 
@@ -55,7 +59,7 @@ def _normalizar_hora(valor: str) -> str | None:
     texto = (valor or "").strip()
     if texto.lower() in _VAZIOS:
         return None
-    m = _HORA_RE.search(texto)
+    m = _HORA_RE.search(_corrigir_prefixo_20(texto))
     if not m:
         return None
     h, mi = int(m.group(1)), int(m.group(2))
@@ -123,13 +127,22 @@ def map_registro(
     referencia: str | None,
     funcionario: str | None,
 ) -> tuple[Registro, list[str]]:
-    dia = linha[0].strip()
-    semana_ocr = (linha[1].strip() if len(linha) > 1 else "") or ""
+    campos = separar_linha(linha)
+    if campos is None:
+        dia = (linha[0] if linha else "").strip()
+        semana_ocr = (linha[1] if len(linha) > 1 else "").strip()
+        entrada = saida_almoco = volta_almoco = saida = None
+    else:
+        dia = campos.dia
+        semana_ocr = campos.semana
+        entrada = _normalizar_hora(campos.entrada)
+        saida_almoco = _normalizar_hora(campos.saida_almoco)
+        volta_almoco = _normalizar_hora(campos.volta_almoco)
+        saida = _normalizar_hora(campos.saida)
+
+    if _normalizar_hora(semana_ocr) is not None:
+        semana_ocr = ""
     semana = _dia_semana_calculado(dia, referencia) or semana_ocr
-    entrada = _normalizar_hora(linha[2] if len(linha) > 2 else "")
-    saida_almoco = _normalizar_hora(linha[3] if len(linha) > 3 else "")
-    volta_almoco = _normalizar_hora(linha[4] if len(linha) > 4 else "")
-    saida = _normalizar_hora(linha[5] if len(linha) > 5 else "")
 
     observacao: str | None = None
     entrada_padrao = False

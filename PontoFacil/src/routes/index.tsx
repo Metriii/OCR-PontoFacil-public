@@ -127,7 +127,7 @@ function Index() {
     } finally { setLoading(false); }
   }
 
-  const precisaRevisao = res?.planilhas?.filter((p) => p.status === "revisar").length ?? 0;
+  const precisaRevisao = res?.registros?.filter(needsReview).length ?? 0;
   const groups = groupItems(items);
 
   return (
@@ -254,8 +254,8 @@ function Index() {
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <Stat label="Cartões enviados" value={res?.total_cartoes ?? (res ? 0 : totalCartoes)} />
           <Stat label="Cartões processados" value={res?.processados ?? 0} />
-          <Stat label="Precisam de revisão" value={precisaRevisao} highlight={precisaRevisao > 0} />
-          <Stat label="Planilhas disponíveis" value={res?.planilhas?.length ?? 0} />
+          <Stat label="Registros para revisão" value={precisaRevisao} highlight={precisaRevisao > 0} />
+          <Stat label="Excel geral disponível" value={res?.consolidado ? 1 : 0} />
         </div>
 
         {/* Revisão */}
@@ -265,18 +265,15 @@ function Index() {
 
         {/* Planilhas */}
         <section className="rounded-xl border-2 border-primary bg-card p-6 shadow-sm">
-          <h2 className="mb-4 flex items-center gap-2 font-display text-xl font-bold text-primary"><FileSpreadsheet className="h-5 w-5" />Planilhas geradas</h2>
-          {!res || (!res.planilhas?.length && !res.consolidado) ? (
+          <h2 className="mb-4 flex items-center gap-2 font-display text-xl font-bold text-primary"><FileSpreadsheet className="h-5 w-5" />Planilha gerada</h2>
+          {!res?.consolidado ? (
             <div className="rounded-lg bg-muted p-6 text-center text-sm text-muted-foreground">
-              <p className="font-medium text-foreground">Suas planilhas aparecerão aqui após o processamento.</p>
+              <p className="font-medium text-foreground">O Excel geral aparecerá aqui após o processamento.</p>
               <p className="mt-1">O botão “Baixar Excel” só fica disponível quando houver uma planilha real gerada pelo sistema.</p>
             </div>
           ) : (
             <div className="space-y-3">
-              {res.consolidado && (
-                <PlanilhaRow p={res.consolidado} destaque />
-              )}
-              {res.planilhas.map((p) => <PlanilhaRow key={p.url} p={p} />)}
+              <PlanilhaRow p={res.consolidado} destaque />
             </div>
           )}
         </section>
@@ -351,7 +348,7 @@ function PlanilhaRow({ p, destaque }: { p: { arquivo: string; funcionario: strin
     <div className={`flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center ${destaque ? "border-primary bg-accent" : "border-border"}`}>
       <FileSpreadsheet className="h-8 w-8 shrink-0 text-success" />
       <div className="flex-1">
-        <p className="font-medium">{destaque ? "Planilha consolidada · " : ""}{p.arquivo}</p>
+        <p className="font-medium">{destaque ? "Excel geral · " : ""}{p.arquivo}</p>
         <p className="text-sm text-muted-foreground">{[p.funcionario, p.referencia, p.status].filter(Boolean).join(" · ")}</p>
       </div>
       <a href={resolveUrl(p.url)} download={p.arquivo} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90">

@@ -15,16 +15,16 @@ _RAIZ = Path(__file__).resolve().parent.parent
 if str(_RAIZ) not in sys.path:
     sys.path.insert(0, str(_RAIZ))
 
-from gerar_excel import _html_tabelas  # noqa: E402
+from gerar_excel import _html_tabelas, separar_linha  # noqa: E402
 
-_DIA_RE = re.compile(r"\d{1,2}")
 _COLABORADOR_RE = re.compile(
     r"(?:^|\s)\d{3,}\s*-\s*(.+?)"
     r"(?=\s+(?:Departamento|Fun[cç][aã]o|CTPS|Admiss[aã]o|Tipo de Escala)\b|$)",
     re.IGNORECASE,
 )
 _PERIODO_RE = re.compile(
-    r"(\d{2}/\d{2}/\d{4})\s*a\s*(\d{2}/\d{2}/\d{4})"
+    r"(\d{2}/\d{2}/\d{4})\s*(?:a|à|até|-)\s*(\d{2}/\d{2}/\d{4})",
+    re.IGNORECASE,
 )
 
 
@@ -33,7 +33,7 @@ def html_tabelas(texto: str) -> list[list[list[str]]]:
 
 
 def _linhas_dia(grid: list[list[str]]) -> list[list[str]]:
-    return [c for c in grid if len(c) >= 6 and _DIA_RE.fullmatch(c[0].strip())]
+    return [c for c in grid if separar_linha(c) is not None]
 
 
 def eh_folha(grid: list[list[str]]) -> bool:
@@ -61,10 +61,17 @@ def nome_colaborador(grid: list[list[str]]) -> str | None:
     return None
 
 
-def referencia(grid: list[list[str]]) -> str | None:
+def referencia(
+    grid: list[list[str]], texto: str | None = None
+) -> str | None:
+    """Periodo do cartao, procurando no grid e, como fallback, no markdown."""
     for linha in grid:
         for celula in linha:
             m = _PERIODO_RE.search(celula)
             if m:
                 return f"{m.group(1)} a {m.group(2)}"
+    if texto:
+        m = _PERIODO_RE.search(texto)
+        if m:
+            return f"{m.group(1)} a {m.group(2)}"
     return None

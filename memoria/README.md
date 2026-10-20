@@ -14,6 +14,7 @@ consiga continuar o projeto sem ficar perdida**. Cada assunto fica em um arquivo
 | [`05-backend-http.md`](./05-backend-http.md) | Sessão: criação da API FastAPI (`backend/`) e conexão com o front |
 | [`06-correcao-ocr-layout.md`](./06-correcao-ocr-layout.md) | Sessão: correção do OCR (colunas deslocadas) |
 | [`07-atualziarpontos.md`](./07-atualziarpontos.md) | Sessão: implementação de `docs/atualziarpontos.md` |
+| [`08-decisao-proximo-passo.md`](./08-decisao-proximo-passo.md) | Pergunta sobre a proxima pendencia + resposta (subir no GitHub) |
 
 ## Como usar (próxima sessão)
 

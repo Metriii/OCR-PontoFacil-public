@@ -1,11 +1,12 @@
 """Geracao das planilhas Excel (.xlsx).
 
-- Uma planilha por folha/colaborador (aba unica).
-- Uma planilha consolidada com uma aba por folha.
+A API disponibiliza apenas o consolidado, com uma aba por folha/colaborador.
+A funcao por folha permanece disponivel para uso isolado e testes.
 """
 
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 
@@ -17,7 +18,10 @@ from openpyxl.worksheet.worksheet import Worksheet
 from .mapper import CABECALHO_EXCEL
 from .modelos import FolhaProcessada
 
+log = logging.getLogger("pontofacil")
+
 _INVALIDOS = re.compile(r"[\\/?*\[\]:]")
+_ARQUIVO_GERADO = re.compile(r"^[0-9a-f]{10}_.+\.xlsx$", re.IGNORECASE)
 _BORDA_LADO = Side(style="thin", color="D0D0D0")
 _BORDA = Border(left=_BORDA_LADO, right=_BORDA_LADO, top=_BORDA_LADO, bottom=_BORDA_LADO)
 
@@ -74,3 +78,23 @@ def gerar_xlsx_consolidado(folhas: list[FolhaProcessada], destino: Path) -> Path
         wb.create_sheet("Vazio")
     wb.save(destino)
     return destino
+
+
+def limpar_planilhas_individuais(diretorio: Path) -> list[Path]:
+    """Remove individuais gerados pela API, preservando os consolidados."""
+    removidas: list[Path] = []
+    if not diretorio.is_dir():
+        return removidas
+
+    for caminho in diretorio.glob("*.xlsx"):
+        if not _ARQUIVO_GERADO.match(caminho.name):
+            continue
+        if caminho.name.lower().endswith("_consolidado.xlsx"):
+            continue
+        try:
+            caminho.unlink()
+        except OSError as exc:
+            log.warning("Nao foi possivel remover %s: %s", caminho.name, exc)
+            continue
+        removidas.append(caminho)
+    return removidas

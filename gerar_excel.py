@@ -41,8 +41,104 @@ _TABELA_RE = re.compile(r"<table[^>]*>(.*?)</table>", re.S | re.I)
 _ROW_RE = re.compile(r"<tr[^>]*>(.*?)</tr>", re.S | re.I)
 _CELL_RE = re.compile(r"<t[dh][^>]*>(.*?)</t[dh]>", re.S | re.I)
 _TAG_RE = re.compile(r"<[^>]+>")
-_DIA_RE = re.compile(r"\d{1,2}")
-_HORA_RE = re.compile(r"(\d{1,2})[:h](\d{2})")
+_HORA_RE = re.compile(r"(\d{1,2})[:h.](\d{2})")
+_PREFIXO_20_RE = re.compile(r"(?<!\d)20(\d{2})([:h.])(\d{2})(?!\d)")
+
+
+def _corrigir_prefixo_20(valor: str) -> str:
+    """Remove o prefixo indevido "20" de horarios lidos como 20XX:XX.
+
+    Exemplos: "2008:00" -> "08:00"; "2017.00" -> "17:00".
+    Horarios validos como "20:30" nao sao alterados.
+    """
+    return _PREFIXO_20_RE.sub(r"\1:\3", valor or "")
+
+
+@dataclass(frozen=True)
+class CamposLinha:
+    """Horarios de uma linha ja separados nas colunas corretas."""
+
+    dia: str
+    semana: str
+    entrada: str
+    saida_almoco: str
+    volta_almoco: str
+    saida: str
+
+
+def _celula(linha: list[str], indice: int) -> str:
+    if indice < 0 or indice >= len(linha):
+        return ""
+    return (linha[indice] or "").strip()
+
+
+def _dia_texto(valor: str) -> Optional[str]:
+    """Dia do mes no inicio da celula, sem confundir com horario."""
+    m = re.match(r"\s*(\d{1,2})(?=\s*(?:$|[^\d:]))", valor or "")
+    if not m:
+        return None
+    numero = int(m.group(1))
+    if not 1 <= numero <= 31:
+        return None
+    return m.group(1)
+
+
+def _hora_corrigida(valor: str) -> Optional[str]:
+    """Normaliza um horario e remove o prefixo indevido 20 (20XX:XX)."""
+    m = _HORA_RE.search(_corrigir_prefixo_20(valor))
+    if not m:
+        return None
+    h, mi = int(m.group(1)), int(m.group(2))
+    if not (0 <= h < 24 and 0 <= mi < 60):
+        return None
+    return f"{h:02d}:{mi:02d}"
+
+
+def separar_linha(linha: list[str]) -> Optional[CamposLinha]:
+    """Separa dia, dia da semana e horarios, corrigindo colunas deslocadas.
+
+    Casos:
+      - ``1 | 2008:57 | 13:10 | 14:09 | 18:08`` (sem dia da semana):
+        ``2008:57`` e a entrada e os demais horarios andam uma coluna.
+      - ``1 - 2008:57 | 13:10 | 14:09 | 18:08`` (entrada na 1a celula):
+        o dia fica so ``1`` e ``08:57`` vira a entrada.
+      - ``1 | Ter | 08:57 | 13:10 | 14:09 | 18:08``: layout normal.
+    """
+    primeira = _celula(linha, 0)
+    dia = _dia_texto(primeira)
+    if dia is None:
+        return None
+
+    entrada_embutida = _hora_corrigida(primeira)
+    if entrada_embutida is not None:
+        return CamposLinha(
+            dia=dia,
+            semana="",
+            entrada=entrada_embutida,
+            saida_almoco=_hora_corrigida(_celula(linha, 1)) or "",
+            volta_almoco=_hora_corrigida(_celula(linha, 2)) or "",
+            saida=_hora_corrigida(_celula(linha, 3)) or "",
+        )
+
+    segunda = _celula(linha, 1)
+    if _hora_corrigida(segunda) is not None:
+        return CamposLinha(
+            dia=dia,
+            semana="",
+            entrada=_hora_corrigida(segunda) or "",
+            saida_almoco=_hora_corrigida(_celula(linha, 2)) or "",
+            volta_almoco=_hora_corrigida(_celula(linha, 3)) or "",
+            saida=_hora_corrigida(_celula(linha, 4)) or "",
+        )
+
+    return CamposLinha(
+        dia=dia,
+        semana=segunda,
+        entrada=_hora_corrigida(_celula(linha, 2)) or "",
+        saida_almoco=_hora_corrigida(_celula(linha, 3)) or "",
+        volta_almoco=_hora_corrigida(_celula(linha, 4)) or "",
+        saida=_hora_corrigida(_celula(linha, 5)) or "",
+    )
 
 
 @dataclass
@@ -128,7 +224,7 @@ def _html_tabelas(texto: str) -> list[list[list[str]]]:
 
 
 def _minutos(valor: str) -> Optional[int]:
-    m = _HORA_RE.search(valor or "")
+    m = _HORA_RE.search(_corrigir_prefixo_20(valor))
     if not m:
         return None
     return int(m.group(1)) * 60 + int(m.group(2))
@@ -157,31 +253,30 @@ def _hora_total(entrar: str, saida_intervalo: str, volta: str, saida: str) -> st
 
 
 def _extrair_folha_ponto(grid: list[list[str]]) -> Optional[list[list[str]]]:
-    linhas = [c for c in grid if len(c) >= 6 and _DIA_RE.fullmatch(c[0].strip())]
-    if not linhas:
-        return None
-
     resultado = [list(CABECALHO_PONTO)]
-    for linha in linhas:
-        dia = linha[0].strip()
-        semana = linha[1].strip()
-        entrar, saida_intervalo, volta, saida = (
-            linha[2].strip(),
-            linha[3].strip(),
-            linha[4].strip(),
-            linha[5].strip(),
+    for linha in grid:
+        campos = separar_linha(linha)
+        if campos is None:
+            continue
+        rotulo = (
+            f"{campos.dia} - {campos.semana}" if campos.semana else campos.dia
         )
         resultado.append(
             [
-                f"{dia} - {semana}" if semana else dia,
-                entrar,
-                saida_intervalo,
-                volta,
-                saida,
-                _hora_total(entrar, saida_intervalo, volta, saida),
+                rotulo,
+                campos.entrada,
+                campos.saida_almoco,
+                campos.volta_almoco,
+                campos.saida,
+                _hora_total(
+                    campos.entrada,
+                    campos.saida_almoco,
+                    campos.volta_almoco,
+                    campos.saida,
+                ),
             ]
         )
-    return resultado
+    return resultado if len(resultado) > 1 else None
 
 
 def _linhas_do_json(dados: dict) -> list[list[list[str]]]:
