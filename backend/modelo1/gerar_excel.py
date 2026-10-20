@@ -1,4 +1,7 @@
-"""Converte o JSON gerado por ler_imagem.py em uma planilha Excel (.xlsx).
+"""Converte o JSON do OCR em uma planilha Excel (.xlsx).
+
+Modulo exclusivo do Modelo 1 (`/processamento/modelo-1`): nenhum outro modelo
+pode importar este arquivo; os modelos 2 e 3 terao seus proprios utilitarios.
 
 Ordem de preferencia para montar a planilha:
   1) "tabelas" (tabelas markdown detectadas pelo OCR/VL) -> uma aba por tabela;
@@ -6,8 +9,8 @@ Ordem de preferencia para montar a planilha:
   3) "markdown"/texto puro -> uma linha por linha de texto.
 
 Exemplos:
-    python gerar_excel.py resultado_ocr.json
-    python gerar_excel.py resultado_ocr.json -o folha_presenca.xlsx --cabecalho
+    python -m backend.modelo1.gerar_excel resultado_ocr.json
+    python -m backend.modelo1.gerar_excel resultado_ocr.json -o saida.xlsx --cabecalho
 """
 
 from __future__ import annotations
@@ -94,8 +97,28 @@ def _hora_corrigida(valor: str) -> Optional[str]:
     return f"{h:02d}:{mi:02d}"
 
 
+# Regra do Modelo 1: entrada lida entre 20h e 23h (leitura noturna indevida)
+# vira 08h, preservando os minutos. Vale apenas para a coluna Entrada.
+_ENTRADA_TARDE = {20, 21, 22, 23}
+
+
+def _hora_entrada(valor: str) -> Optional[str]:
+    """Normaliza a hora de entrada aplicando a regra 20:XX..23:XX -> 08:XX."""
+    hora = _hora_corrigida(valor)
+    if hora is None:
+        return None
+    hh, mm = hora.split(":")
+    if int(hh) in _ENTRADA_TARDE:
+        return f"08:{mm}"
+    return hora
+
+
 def separar_linha(linha: list[str]) -> Optional[CamposLinha]:
     """Separa dia, dia da semana e horarios, corrigindo colunas deslocadas.
+
+    A entrada passa por :func:`_hora_entrada`: horarios de entrada entre 20h e
+    23h (ex.: ``20:30``, ``23:00``) viram ``08:xx``. As demais colunas usam
+    apenas a normalizacao generica de :func:`_hora_corrigida`.
 
     Casos:
       - ``1 | 2008:57 | 13:10 | 14:09 | 18:08`` (sem dia da semana):
@@ -109,7 +132,7 @@ def separar_linha(linha: list[str]) -> Optional[CamposLinha]:
     if dia is None:
         return None
 
-    entrada_embutida = _hora_corrigida(primeira)
+    entrada_embutida = _hora_entrada(primeira)
     if entrada_embutida is not None:
         return CamposLinha(
             dia=dia,
@@ -121,11 +144,12 @@ def separar_linha(linha: list[str]) -> Optional[CamposLinha]:
         )
 
     segunda = _celula(linha, 1)
-    if _hora_corrigida(segunda) is not None:
+    entrada_segunda = _hora_entrada(segunda)
+    if entrada_segunda is not None:
         return CamposLinha(
             dia=dia,
             semana="",
-            entrada=_hora_corrigida(segunda) or "",
+            entrada=entrada_segunda,
             saida_almoco=_hora_corrigida(_celula(linha, 2)) or "",
             volta_almoco=_hora_corrigida(_celula(linha, 3)) or "",
             saida=_hora_corrigida(_celula(linha, 4)) or "",
@@ -134,7 +158,7 @@ def separar_linha(linha: list[str]) -> Optional[CamposLinha]:
     return CamposLinha(
         dia=dia,
         semana=segunda,
-        entrada=_hora_corrigida(_celula(linha, 2)) or "",
+        entrada=_hora_entrada(_celula(linha, 2)) or "",
         saida_almoco=_hora_corrigida(_celula(linha, 3)) or "",
         volta_almoco=_hora_corrigida(_celula(linha, 4)) or "",
         saida=_hora_corrigida(_celula(linha, 5)) or "",
@@ -350,7 +374,7 @@ def main() -> None:
         "json",
         nargs="?",
         default="resultado_ocr.json",
-        help="JSON gerado por ler_imagem.py (padrao: resultado_ocr.json)",
+        help="JSON gerado por backend.modelo1.ler_imagem (padrao: resultado_ocr.json)",
     )
     parser.add_argument(
         "-o",

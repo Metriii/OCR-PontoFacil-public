@@ -5,11 +5,17 @@ Excel, usando o **MCP do PaddleOCR** (modelo `PaddleOCR-VL-1.6` via AI Studio).
 
 ## Como funciona
 
-1. `ler_imagem.py` inicia o servidor MCP do PaddleOCR (`uvx --from paddleocr-mcp`),
-   envia a imagem e salva o resultado em `resultado_ocr.json` (markdown + tabelas).
-2. `gerar_excel.py` lê esse JSON, extrai da tabela as colunas
+1. `backend/modelo1/ler_imagem.py` inicia o servidor MCP do PaddleOCR
+   (`uvx --from paddleocr-mcp`), envia a imagem e salva o resultado em
+   `resultado_ocr.json` (markdown + tabelas).
+2. `backend/modelo1/gerar_excel.py` lê esse JSON, extrai da tabela as colunas
    **Dia da semana, Entrar, Saída para intervalo, Volta intervalo, Saída e Hora total**
    e gera `folha_presenca.xlsx`.
+
+> Esses dois scripts são **exclusivos do Modelo 1**
+> (`/processamento/modelo-1`); os modelos 2 e 3 terão os seus próprios
+> módulos. Regra do Modelo 1: entrada lida entre 20h e 23h vira 08h
+> preservando os minutos (`20:30` → `08:30`).
 
 ## Requisitos
 
@@ -34,18 +40,19 @@ Gere um access token em https://aistudio.baidu.com e coloque em um arquivo
 ## Uso
 
 ```bash
-.\.venv\Scripts\python.exe ler_imagem.py folha.jpg
-.\.venv\Scripts\python.exe gerar_excel.py resultado_ocr.json --cabecalho
+.\.venv\Scripts\python.exe -m backend.modelo1.ler_imagem folha.jpg
+.\.venv\Scripts\python.exe -m backend.modelo1.gerar_excel resultado_ocr.json --cabecalho
 ```
 
-- `ler_imagem.py <imagem>` → cria `resultado_ocr.json`
-- `gerar_excel.py <json>` → cria `folha_presenca.xlsx` (`--cabecalho` deixa a
-  primeira linha em negrito e congelada)
+- `python -m backend.modelo1.ler_imagem <imagem>` → cria `resultado_ocr.json`
+- `python -m backend.modelo1.gerar_excel <json>` → cria `folha_presenca.xlsx`
+  (`--cabecalho` deixa a primeira linha em negrito e congelada)
 
 ## Estrutura
 
 ```
-ler_imagem.py      # OCR via MCP do PaddleOCR -> JSON
-gerar_excel.py     # JSON -> planilha .xlsx
-requirements.txt   # dependencias
+backend/modelo1/
+├── ler_imagem.py   # OCR via MCP do PaddleOCR -> JSON (exclusivo do Modelo 1)
+└── gerar_excel.py  # JSON -> planilha .xlsx (exclusivo do Modelo 1)
+requirements.txt    # dependencias
 ```

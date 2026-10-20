@@ -18,6 +18,7 @@ consiga continuar o projeto sem ficar perdida**. Cada assunto fica em um arquivo
 | [`09-prompts-execucao-2026-10-20.md`](./09-prompts-execucao-2026-10-20.md) | Sessão: prompts de execução e decisões de 2026-10-20 |
 | [`10-plano-integracao-central-ponto.md`](./10-plano-integracao-central-ponto.md) | Plano futuro: Central de ponto + integração por modelo |
 | [`11-integracao-central-ponto.md`](./11-integracao-central-ponto.md) | Execução: integração da Central de ponto (rotas por modelo) |
+| [`12-exclusividade-modelo1-entrada-20h.md`](./12-exclusividade-modelo1-entrada-20h.md) | Execução: scripts exclusivos do Modelo 1 em `backend/modelo1/` + regra entrada 20h–23h → 08h |
 
 ## Como usar (próxima sessão)
 

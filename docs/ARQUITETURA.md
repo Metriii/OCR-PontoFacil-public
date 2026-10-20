@@ -77,13 +77,16 @@
 ```
 backend/
 ├── main.py                 # app FastAPI, CORS, rotas
+├── modelo1/                # EXCLUSIVO do Modelo 1 (/processamento/modelo-1)
+│   ├── gerar_excel.py      # CLI Excel + parse de horários (regra 20h–23h -> 08h)
+│   └── ler_imagem.py       # CLI OCR via MCP do PaddleOCR -> JSON
 ├── rotas/
 │   ├── processar.py        # POST /processar (multipart)
 │   └── download.py         # GET /download/{arquivo}
 ├── servicos/
 │   ├── mcp_client.py       # sessão MCP reutilizável (pool 2–4)
 │   ├── ocr.py              # chama paddleocr_vl -> markdown
-│   ├── parser.py           # HTML/markdown -> linhas (reuso de gerar_excel.py)
+│   ├── parser.py           # HTML/markdown -> linhas (reuso de modelo1/gerar_excel.py)
 │   ├── mapper.py           # linhas -> Registro[] (4 pontas + confiança)
 │   ├── excel.py            # gera o consolidado (.xlsx, 1 aba/folha)
 │   └── storage.py          # salva/recupera arquivos p/ download
@@ -213,11 +216,12 @@ PontoFacil/                     # raiz do repositório único
 │   ├── ARQUITETURA.md
 │   └── ESPECIFICACAO_BACKEND.md
 ├── memoria/                    # histórico das sessões
-├── ler_imagem.py               # CLI OCR (reuso)
-├── gerar_excel.py              # CLI Excel (reuso)
 ├── requirements.txt
 ├── backend/                    # NOVO: API FastAPI
 │   ├── main.py
+│   ├── modelo1/                # EXCLUSIVO do Modelo 1
+│   │   ├── ler_imagem.py       # CLI OCR via MCP
+│   │   └── gerar_excel.py      # CLI Excel + parse de horários
 │   ├── rotas/ servicos/ modelos.py
 │   └── requirements.txt
 └── frontend/                   # ex-PontoFacil/ (Lovable)

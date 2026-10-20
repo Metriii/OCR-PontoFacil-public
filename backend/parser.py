@@ -1,21 +1,14 @@
 """Parsing do markdown/tabela HTML retornado pelo OCR.
 
-Reaproveita os utilitarios de `gerar_excel.py` (regexes e extracao de tabela) para
-manter uma unica implementacao do parse.
+Reaproveita os utilitarios do Modelo 1 (`backend.modelo1.gerar_excel`: regexes e
+extracao de tabela) para manter uma unica implementacao do parse.
 """
 
 from __future__ import annotations
 
 import re
-import sys
-from pathlib import Path
 
-# Garante a raiz do projeto no sys.path (permite importar gerar_excel).
-_RAIZ = Path(__file__).resolve().parent.parent
-if str(_RAIZ) not in sys.path:
-    sys.path.insert(0, str(_RAIZ))
-
-from gerar_excel import _html_tabelas, separar_linha  # noqa: E402
+from .modelo1.gerar_excel import _html_tabelas, separar_linha
 
 _COLABORADOR_RE = re.compile(
     r"(?:^|\s)\d{3,}\s*-\s*(.+?)"

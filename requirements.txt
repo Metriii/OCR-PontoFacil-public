@@ -11,8 +11,8 @@ Pillow>=10.0.0
 types-openpyxl>=3.1.5
 
 # ---------------------------------------------------------------------------
-# O servidor MCP do PaddleOCR NAO precisa ser instalado aqui: o ler_imagem.py o
-# inicia sob demanda com:
+# O servidor MCP do PaddleOCR NAO precisa ser instalado aqui: o
+# backend/modelo1/ler_imagem.py o inicia sob demanda com:
 #     uvx --from paddleocr-mcp paddleocr_mcp
 # usando o modo AI Studio (PaddleOCR-VL-1.6), que roda na nuvem (nao exige
 # paddlepaddle localmente). Para isso e preciso ter o "uv" instalado:
@@ -21,5 +21,5 @@ types-openpyxl>=3.1.5
 #
 # Alternativa sem uv (servidor instalado no proprio ambiente):
 #     pip install paddleocr-mcp
-#     python ler_imagem.py folha.jpg --comando local
+#     python -m backend.modelo1.ler_imagem folha.jpg --comando local
 # ---------------------------------------------------------------------------

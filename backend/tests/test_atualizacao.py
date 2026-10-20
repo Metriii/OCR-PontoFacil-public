@@ -14,7 +14,7 @@ sys.path.insert(0, str(RAIZ))
 
 from openpyxl import load_workbook  # noqa: E402
 
-import gerar_excel  # noqa: E402
+from backend.modelo1 import gerar_excel  # noqa: E402
 from backend import mapper, parser  # noqa: E402
 from backend.excel import (  # noqa: E402
     gerar_xlsx_consolidado,
@@ -246,6 +246,108 @@ class TestPrefixo20(unittest.TestCase):
         grupos = gerar_excel._linhas_do_json({"markdown": markdown})
         self.assertEqual(grupos[0][1][1:5], ["08:00", "12:00", "13:00", "17:00"])
         self.assertEqual(grupos[0][1][5], "08:00")
+
+
+class TestEntradaTarde(unittest.TestCase):
+    """Regra do Modelo 1: entrada 20:XX..23:XX vira 08:XX (minutos iguais)."""
+
+    def test_entradas_20_a_23_viram_08(self) -> None:
+        casos = (
+            ("20:05", "08:05"),
+            ("21:15", "08:15"),
+            ("22:59", "08:59"),
+            ("23:00", "08:00"),
+            ("23:59", "08:59"),
+        )
+        for hora, esperado in casos:
+            with self.subTest(hora=hora):
+                registro, linha_excel = _registro(
+                    ["01", "Ter", hora, "12:00", "13:00", "17:00"]
+                )
+                self.assertEqual(registro.entrada, esperado)
+                self.assertEqual(linha_excel[1], esperado)
+
+    def test_nao_altera_as_demais_colunas(self) -> None:
+        registro, linha_excel = _registro(
+            ["01", "Ter", "08:00", "20:15", "20:30", "23:45"]
+        )
+        self.assertEqual(registro.entrada, "08:00")
+        self.assertEqual(
+            linha_excel[1:5], ["08:00", "20:15", "20:30", "23:45"]
+        )
+        self.assertEqual(registro.saida_almoco, "20:15")
+        self.assertEqual(registro.volta_almoco, "20:30")
+        self.assertEqual(registro.saida, "23:45")
+
+    def test_hora_total_usa_entrada_ajustada(self) -> None:
+        _, linha_excel = _registro(
+            ["01", "Ter", "23:00", "12:00", "13:00", "17:00"]
+        )
+        self.assertEqual(linha_excel[1], "08:00")
+        self.assertEqual(linha_excel[5], "08:00")
+
+    def test_prefixo_20_e_aplicado_antes_da_regra(self) -> None:
+        registro, _ = _registro(
+            ["01", "Ter", "2008:57", "13:10", "14:09", "18:08"]
+        )
+        self.assertEqual(registro.entrada, "08:57")
+
+    def test_layout_com_entrada_deslocada(self) -> None:
+        # entrada embutida na 1a celula
+        registro, linha_excel = mapper.map_registro(
+            ["1 - 23:15", "13:10", "14:09", "18:08", ""], 0, None, "FULANO"
+        )
+        self.assertEqual(registro.entrada, "08:15")
+        self.assertEqual(linha_excel[1], "08:15")
+
+        # entrada na 2a celula, sem dia da semana
+        registro, linha_excel = mapper.map_registro(
+            ["1", "21:45", "13:10", "14:09", "18:08", ""], 0, None, "FULANO"
+        )
+        self.assertEqual(registro.entrada, "08:45")
+        self.assertEqual(linha_excel[1], "08:45")
+
+    def test_hora_entrada_generica_e_apenas_para_entrada(self) -> None:
+        self.assertEqual(gerar_excel._hora_entrada("20:30"), "08:30")
+        self.assertEqual(gerar_excel._hora_entrada("2008:57"), "08:57")
+        self.assertEqual(gerar_excel._hora_entrada("08:45"), "08:45")
+        self.assertIsNone(gerar_excel._hora_entrada("???"))
+        # a normalizacao generica continua preservando 20:XX/23:XX
+        self.assertEqual(gerar_excel._hora_corrigida("23:45"), "23:45")
+        self.assertEqual(mapper._normalizar_hora("20:30"), "20:30")
+
+    def test_planilha_standalone_aplica_regra(self) -> None:
+        markdown = (
+            "<table>"
+            "<tr><td>01</td><td>Ter</td><td>20:30</td><td>12:00</td>"
+            "<td>13:00</td><td>17:00</td></tr>"
+            "</table>"
+        )
+        grupos = gerar_excel._linhas_do_json({"markdown": markdown})
+        self.assertEqual(
+            grupos[0][1][1:5], ["08:30", "12:00", "13:00", "17:00"]
+        )
+
+
+class TestPacoteModelo1(unittest.TestCase):
+    """Os scripts exclusivos do Modelo 1 vivem em backend/modelo1/."""
+
+    def test_scripts_no_pacote_do_modelo1(self) -> None:
+        self.assertEqual(
+            Path(gerar_excel.__file__).parent, RAIZ / "backend" / "modelo1"
+        )
+        self.assertTrue((RAIZ / "backend" / "modelo1" / "ler_imagem.py").exists())
+        self.assertFalse((RAIZ / "gerar_excel.py").exists())
+        self.assertFalse((RAIZ / "ler_imagem.py").exists())
+
+    def test_token_do_ler_imagem_na_raiz_do_projeto(self) -> None:
+        try:
+            from backend.modelo1 import ler_imagem
+        except ModuleNotFoundError as exc:
+            if exc.name != "mcp":
+                raise
+            self.skipTest("dependencia 'mcp' nao instalada neste interpretador")
+        self.assertEqual(ler_imagem.ARQUIVO_TOKEN, RAIZ / "token.txt")
 
 
 class TestDiaDaSemana(unittest.TestCase):

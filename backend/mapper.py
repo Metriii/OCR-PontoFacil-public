@@ -7,21 +7,14 @@ Entrada/Saida detectados pelo conteudo da linha; os pares extras sao ignorados.
 from __future__ import annotations
 
 import re
-import sys
 from datetime import date
-from pathlib import Path
 
-_RAIZ = Path(__file__).resolve().parent.parent
-if str(_RAIZ) not in sys.path:
-    sys.path.insert(0, str(_RAIZ))
-
-from gerar_excel import (  # noqa: E402
+from .modelos import Registro
+from .modelo1.gerar_excel import (
     _corrigir_prefixo_20,
     _hora_total,
     separar_linha,
 )
-
-from .modelos import Registro  # noqa: E402
 
 _HORA_RE = re.compile(r"(?<![\d$])(\d{1,2})[:h.](\d{2})")
 _VAZIOS = {"", "-", "--", "—", "——", "---", "n/a", "na"}

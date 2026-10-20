@@ -10,14 +10,17 @@ Reproduz a configuracao do MCP:
 Conecta no servidor MCP, descobre a tool exposta (paddleocr_vl/ocr/...), envia a
 imagem da folha de presenca e grava o resultado (markdown + tabelas) em JSON.
 
+Modulo exclusivo do Modelo 1 (`/processamento/modelo-1`): nenhum outro modelo
+pode importar este arquivo; os modelos 2 e 3 terao seus proprios utilitarios.
+
 Cole o seu token na constante TOKEN_AISTUDIO abaixo, ou passe --token, ou defina a
 variavel de ambiente PADDLEOCR_MCP_AISTUDIO_ACCESS_TOKEN.
 
 Exemplos:
-    python ler_imagem.py folha.jpg
-    python ler_imagem.py folha.jpg -o resultado_ocr.json
-    python ler_imagem.py folha.jpg --token SEU_TOKEN
-    python ler_imagem.py folha.jpg --comando local   (usa python -m paddleocr_mcp)
+    python -m backend.modelo1.ler_imagem folha.jpg
+    python -m backend.modelo1.ler_imagem folha.jpg -o resultado_ocr.json
+    python -m backend.modelo1.ler_imagem folha.jpg --token SEU_TOKEN
+    python -m backend.modelo1.ler_imagem folha.jpg --comando local  (python -m paddleocr_mcp)
 """
 
 from __future__ import annotations
@@ -37,7 +40,7 @@ from mcp.client.stdio import stdio_client
 
 # ---------------------------------------------------------------------------
 # >>> COLE O SEU TOKEN DO AI STUDIO AQUI <<<
-# (ou coloque o token no arquivo token.txt, ao lado deste script, que nao vai
+# (ou coloque o token no arquivo token.txt, na raiz do projeto, que nao vai
 #  para o Git; ou defina PADDLEOCR_MCP_AISTUDIO_ACCESS_TOKEN no ambiente)
 TOKEN_AISTUDIO = "COLE_SEU_TOKEN_AQUI"
 # ---------------------------------------------------------------------------
@@ -50,7 +53,8 @@ ARGS_MCP = ["--from", "paddleocr-mcp", "paddleocr_mcp"]
 
 TOOLS_PREFERIDAS = ["paddleocr_vl", "pp_structurev3", "ocr"]
 
-ARQUIVO_TOKEN = Path(__file__).with_name("token.txt")
+# token.txt mora na RAIZ do projeto (2 niveis acima de backend/modelo1/).
+ARQUIVO_TOKEN = Path(__file__).resolve().parents[2] / "token.txt"
 
 
 def _ler_token_arquivo() -> str:
@@ -71,8 +75,8 @@ def _resolver_token(args: argparse.Namespace) -> str:
         if token and token != "COLE_SEU_TOKEN_AQUI":
             return token
     raise SystemExit(
-        "Token do AI Studio nao informado. Coloque-o em token.txt (ao lado deste "
-        "script), na constante TOKEN_AISTUDIO, passe --token SEU_TOKEN ou defina a "
+        "Token do AI Studio nao informado. Coloque-o em token.txt (na raiz do "
+        "projeto), na constante TOKEN_AISTUDIO, passe --token SEU_TOKEN ou defina a "
         "variavel de ambiente PADDLEOCR_MCP_AISTUDIO_ACCESS_TOKEN."
     )
 

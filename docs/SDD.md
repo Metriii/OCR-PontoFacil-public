@@ -236,7 +236,7 @@ A linha de dados da folha é mapeada assim (índice da célula):
 > Entrada/Saída**. A regra atual usa **apenas os dois primeiros pares** (índices
 > 2..5), conforme decisão registrada em [`memoria/02-decisoes.md`](../memoria/02-decisoes.md).
 
-### 7.2 Cálculo da Hora total (reaproveitado de `gerar_excel.py:137`)
+### 7.2 Cálculo da Hora total (reaproveitado de `backend/modelo1/gerar_excel.py`)
 
 ```
 Hora total = (saida_almoco − entrada) + (saida − volta_almoco)
@@ -265,6 +265,25 @@ revisar == true || confianca == null || confianca < 0.7
   - O OCR retornar texto ambíguo na célula de horário.
 
 > A heurística é um parâmetro de projeto e deve ser validada com folhas reais.
+
+### 7.4 Regra de entrada 20h–23h → 08h (Modelo 1)
+
+Quando a **entrada** lida estiver entre `20:00` e `23:59`, o horário é
+convertido para as 08h **preservando os minutos** (leitura noturna indevida):
+
+| Entrada lida | Entrada registrada |
+|--------------|--------------------|
+| `20:30`      | `08:30`            |
+| `21:15`      | `08:15`            |
+| `22:59`      | `08:59`            |
+| `23:00`      | `08:00`            |
+
+- Vale **apenas para a coluna Entrada**; saída e intervalos permanecem intactos.
+- A correção do prefixo `20XX:XX` continua sendo aplicada antes
+  (`2008:57` → `08:57`).
+- Implementada em `backend/modelo1/gerar_excel.py::_hora_entrada`, aplicada por
+  `separar_linha` — vale ao mesmo tempo para a revisão no frontend, a planilha
+  e o cálculo da Hora total.
 
 ---
 
@@ -346,7 +365,13 @@ Clique "Baixar Excel" → GET {API_URL}/download/{arquivo} → arquivo .xlsx
   `saida`; mapeamento usa os dois primeiros pares Entrada/Saída da folha.
 - **ADR-03 — Repositório único:** frontend e backend passam a viver no mesmo repo.
 - **ADR-04 — Backend FastAPI sobre o MCP existente:** reaproveita
-  `ler_imagem.py`/`gerar_excel.py` (`ESPECIFICACAO_BACKEND.md`), expondo HTTP.
+  `backend/modelo1/ler_imagem.py`/`backend/modelo1/gerar_excel.py`
+  (`ESPECIFICACAO_BACKEND.md`), expondo HTTP.
+- **ADR-05 — Módulos exclusivos por modelo:** `ler_imagem.py` e `gerar_excel.py`
+  vivem em `backend/modelo1/` e pertencem somente ao Modelo 1
+  (`/processamento/modelo-1`). Os modelos 2 e 3 devem criar os seus próprios
+  utilitários em vez de importar estes. Ver
+  [`memoria/12-exclusividade-modelo1-entrada-20h.md`](../memoria/12-exclusividade-modelo1-entrada-20h.md).
 
 ---
 
