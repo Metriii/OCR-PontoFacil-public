@@ -104,22 +104,35 @@ backend/
 ```
 PontoFacil/src/
 ├── routes/
-│   ├── __root.tsx          # shell, providers, erro/404
-│   └── index.tsx           # tela principal (upload, revisão, planilhas)
+│   ├── __root.tsx            # shell, providers, erro/404
+│   ├── index.tsx             # Central de ponto (histórico + cards de modelos)
+│   └── processamento/
+│       ├── modelo-1.tsx      # tela original (upload, revisão, planilhas)
+│       ├── modelo-2.tsx      # placeholder "Em breve"
+│       └── modelo-3.tsx      # placeholder "Em breve"
+├── components/
+│   ├── ponto/                # AppHeader, HistoryPanel, ModelCards (Central)
+│   └── ui/                   # componentes shadcn
 ├── lib/
-│   ├── api.ts              # contrato HTTP (processarCartoes, resolveUrl, tipos)
-│   ├── utils.ts            # cn()
-│   └── error-*.ts          # captura de erro SSR
-├── router.tsx              # createRouter
-├── server.ts / start.ts    # wrapper SSR + CSRF (Lovable)
-└── styles.css              # tema (Tailwind v4, cores oklch)
+│   ├── api.ts                # contrato HTTP (processarCartoes, resolveUrl, tipos)
+│   ├── history.ts            # contrato do histórico (sem dados simulados)
+│   ├── utils.ts              # cn()
+│   └── error-*.ts            # captura de erro SSR
+├── router.tsx                # createRouter
+├── server.ts / start.ts      # wrapper SSR + CSRF (Lovable)
+└── styles.css                # tema (Tailwind v4, cores oklch)
 ```
 
 - **`src/lib/api.ts`** é o único ponto de integração com o backend:
   - `processarCartoes(files, onUploadProgress)` — `POST /processar` (XHR).
   - `resolveUrl(url)` — prefixa `API_URL` para URLs relativas.
   - Tipos `Registro`, `Planilha`, `ResultadoProcessamento`.
-- **`src/routes/index.tsx`** consome esses tipos e exibe a tabela de revisão.
+- **`src/routes/index.tsx`** é a página inicial: exibe o painel de histórico
+  (estado vazio real, ainda sem endpoint) e os cards dos três modelos.
+- **`src/routes/processamento/modelo-1.tsx`** é a tela de processamento atual:
+  consome esses tipos, exibe a tabela de revisão e gera o Excel consolidado.
+- Os Modelos 2 e 3 possuem apenas páginas provisórias "Em breve"; nenhuma
+  regra de processamento foi implementada para eles.
 
 ---
 
@@ -130,7 +143,7 @@ PontoFacil/src/
 │  Usuário   │─────────────────────────────────────────┐
 └────────────┘                                          ▼
                                             ┌────────────────────────┐
-                                            │ Frontend: index.tsx    │
+                                            │ Frontend: modelo-1    │
                                             │ - valida extensões     │
                                             │ - expande ZIP (jszip)  │
                                             │ - mostra previews      │

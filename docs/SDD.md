@@ -249,7 +249,7 @@ Hora total = (saida_almoco − entrada) + (saida − volta_almoco)
 ### 7.3 Confiança e revisão
 
 O OCR atual **não fornece** um score de confiança. A UI destaca em amarelo e marca
-como “revisão manual” quando (`src/routes/index.tsx:288`):
+como “revisão manual” quando (`src/routes/processamento/modelo-1.tsx:288`):
 
 ```
 revisar == true || confianca == null || confianca < 0.7
@@ -276,7 +276,7 @@ revisar == true || confianca == null || confianca < 0.7
 Usuário
   │  seleciona fotos / pasta / ZIP
   ▼
-Frontend (rota "/")
+Frontend (/processamento/modelo-1)
   │  valida tipos, expande ZIP (jszip), monta FormData("arquivos")
   │  POST {VITE_API_URL}/processar  (XHR, progresso de upload)
   ▼

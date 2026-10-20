@@ -4,8 +4,9 @@ Sessão de 2026-10-20. Este arquivo **não registra algo já executado**: ele gu
 o plano aprovado para uma execução futura da integração descrita em
 [`../docs/INTEGRACAO_PONTOFACIL_DUAS_TELAS.md`](../docs/INTEGRACAO_PONTOFACIL_DUAS_TELAS.md).
 
-- **Status:** não executado.
-- **Baseline:** branch `melhorias`, commit `e618b0e`.
+- **Status:** executado em 2026-10-20 na branch `integracao-central-ponto` —
+  ver [`11-integracao-central-ponto.md`](./11-integracao-central-ponto.md).
+- **Baseline da planejamento:** branch `melhorias`, commit `e618b0e`.
 - **Documento-fonte:** `docs/INTEGRACAO_PONTOFACIL_DUAS_TELAS.md`.
 - **Objetivo:** transformar o PontoFácil atual em uma única aplicação com a nova
   Central de ponto em `/` e o processamento original em

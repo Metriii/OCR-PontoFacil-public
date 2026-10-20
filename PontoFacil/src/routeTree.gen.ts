@@ -10,33 +10,76 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ProcessamentoModelo1RouteImport } from './routes/processamento/modelo-1'
+import { Route as ProcessamentoModelo2RouteImport } from './routes/processamento/modelo-2'
+import { Route as ProcessamentoModelo3RouteImport } from './routes/processamento/modelo-3'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProcessamentoModelo1Route = ProcessamentoModelo1RouteImport.update({
+  id: '/processamento/modelo-1',
+  path: '/processamento/modelo-1',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProcessamentoModelo2Route = ProcessamentoModelo2RouteImport.update({
+  id: '/processamento/modelo-2',
+  path: '/processamento/modelo-2',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProcessamentoModelo3Route = ProcessamentoModelo3RouteImport.update({
+  id: '/processamento/modelo-3',
+  path: '/processamento/modelo-3',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/processamento/modelo-1': typeof ProcessamentoModelo1Route
+  '/processamento/modelo-2': typeof ProcessamentoModelo2Route
+  '/processamento/modelo-3': typeof ProcessamentoModelo3Route
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/processamento/modelo-1': typeof ProcessamentoModelo1Route
+  '/processamento/modelo-2': typeof ProcessamentoModelo2Route
+  '/processamento/modelo-3': typeof ProcessamentoModelo3Route
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/processamento/modelo-1': typeof ProcessamentoModelo1Route
+  '/processamento/modelo-2': typeof ProcessamentoModelo2Route
+  '/processamento/modelo-3': typeof ProcessamentoModelo3Route
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/processamento/modelo-1'
+    | '/processamento/modelo-2'
+    | '/processamento/modelo-3'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/processamento/modelo-1'
+    | '/processamento/modelo-2'
+    | '/processamento/modelo-3'
+  id:
+    | '__root__'
+    | '/'
+    | '/processamento/modelo-1'
+    | '/processamento/modelo-2'
+    | '/processamento/modelo-3'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ProcessamentoModelo1Route: typeof ProcessamentoModelo1Route
+  ProcessamentoModelo2Route: typeof ProcessamentoModelo2Route
+  ProcessamentoModelo3Route: typeof ProcessamentoModelo3Route
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +91,35 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/processamento/modelo-1': {
+      id: '/processamento/modelo-1'
+      path: '/processamento/modelo-1'
+      fullPath: '/processamento/modelo-1'
+      preLoaderRoute: typeof ProcessamentoModelo1RouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/processamento/modelo-2': {
+      id: '/processamento/modelo-2'
+      path: '/processamento/modelo-2'
+      fullPath: '/processamento/modelo-2'
+      preLoaderRoute: typeof ProcessamentoModelo2RouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/processamento/modelo-3': {
+      id: '/processamento/modelo-3'
+      path: '/processamento/modelo-3'
+      fullPath: '/processamento/modelo-3'
+      preLoaderRoute: typeof ProcessamentoModelo3RouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ProcessamentoModelo1Route: ProcessamentoModelo1Route,
+  ProcessamentoModelo2Route: ProcessamentoModelo2Route,
+  ProcessamentoModelo3Route: ProcessamentoModelo3Route,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

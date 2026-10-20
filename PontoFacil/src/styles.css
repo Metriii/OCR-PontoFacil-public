@@ -33,7 +33,9 @@
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-soft: var(--primary-soft);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -46,8 +48,13 @@
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
   --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-table-head: var(--table-head);
   --font-display: "Fraunces", serif;
   --font-sans: "IBM Plex Sans", sans-serif;
+  --font-serif: "Source Serif 4", Georgia, serif;
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-ring-offset-background: var(--background);
@@ -75,7 +82,9 @@
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.22 0.03 25);
   --primary: oklch(0.42 0.15 25);
+  --primary-hover: oklch(0.36 0.13 25);
   --primary-foreground: oklch(0.99 0.005 80);
+  --primary-soft: oklch(0.95 0.02 25);
   --secondary: oklch(0.94 0.025 80);
   --secondary-foreground: oklch(0.3 0.06 25);
   --muted: oklch(0.95 0.015 80);
@@ -87,6 +96,10 @@
   --warning: oklch(0.95 0.06 85);
   --warning-foreground: oklch(0.42 0.1 60);
   --success: oklch(0.55 0.12 150);
+  --success-soft: oklch(0.94 0.05 150);
+  --info: oklch(0.5 0.15 255);
+  --info-soft: oklch(0.93 0.04 245);
+  --table-head: oklch(0.982 0.007 75);
   --border: oklch(0.89 0.02 75);
   --input: oklch(0.89 0.02 75);
   --ring: oklch(0.42 0.15 25);
