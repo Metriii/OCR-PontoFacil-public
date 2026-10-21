@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import io
 import sys
 import tempfile
 import unittest
+import zipfile
 from datetime import date
 from pathlib import Path
 from unittest.mock import patch
@@ -478,13 +480,16 @@ class TestSaidaConsolidada(unittest.TestCase):
 
         folha = self._folha("ANA")
 
-        async def processar_falso(imagens):
+        async def processar_falso(imagens, lote=None):
             return [folha], []
 
         with tempfile.TemporaryDirectory() as pasta:
             with (
                 patch.object(servico, "processar_folhas", processar_falso),
                 patch.object(config, "DIR_SAIDA", Path(pasta)),
+                patch.object(config, "DIR_DADOS", Path(pasta) / "data"),
+                patch.object(config, "ARQUIVO_BANCO", Path(pasta) / "data" / "teste.db"),
+                patch.object(config, "DIR_LOGS", Path(pasta) / "logs"),
             ):
                 with TestClient(app) as cliente:
                     resposta = cliente.post(
@@ -499,6 +504,38 @@ class TestSaidaConsolidada(unittest.TestCase):
             arquivos = list(Path(pasta).glob("*.xlsx"))
             self.assertEqual(len(arquivos), 1)
             self.assertTrue(arquivos[0].name.endswith("_consolidado.xlsx"))
+
+
+class TestFormatosImagem(unittest.TestCase):
+    def test_aceita_jfif_jpe_e_pdf_direto_e_em_zip(self) -> None:
+        try:
+            from backend import servico
+        except ModuleNotFoundError as exc:
+            if exc.name != "mcp":
+                raise
+            self.skipTest("dependencia 'mcp' nao instalada neste interpretador")
+
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as zf:
+            zf.writestr("cartoes/folha.JFIF", b"jfif")
+            zf.writestr("cartoes/outra.JPE", b"jpe")
+            zf.writestr("cartoes/cartao.pdf", b"pdf")
+            zf.writestr("cartoes/ignorar.txt", b"txt")
+
+        imagens, avisos = servico.expandir_arquivos(
+            [
+                ("direta.jfif", b"jfif"),
+                ("direta.jpe", b"jpe"),
+                ("direto.pdf", b"pdf"),
+                ("lote.zip", buffer.getvalue()),
+            ]
+        )
+
+        self.assertEqual(
+            [nome for nome, _ in imagens],
+            ["direta.jfif", "direta.jpe", "direto.pdf", "folha.JFIF", "outra.JPE", "cartao.pdf"],
+        )
+        self.assertEqual(avisos, [])
 
 
 class TestCompatibilidade(unittest.TestCase):

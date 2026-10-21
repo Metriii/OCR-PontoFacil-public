@@ -22,6 +22,18 @@ FONTE_PADRAO = "aistudio"
 # Onde as planilhas geradas ficam disponiveis para download.
 DIR_SAIDA = Path(os.getenv("PONTOFACIL_OUTPUT_DIR", str(RAIZ / "backend" / "_out")))
 
+# Banco SQLite local e logs diarios. Caminhos absolutos e independentes do CWD.
+DIR_DADOS = Path(os.getenv("PONTOFACIL_DATA_DIR", str(RAIZ / "data")))
+ARQUIVO_BANCO = Path(
+    os.getenv("PONTOFACIL_DB_PATH", str(DIR_DADOS / "pontofacil.db"))
+)
+DIR_LOGS = Path(os.getenv("PONTOFACIL_LOG_DIR", str(RAIZ / "logs")))
+
+# Fuso usado nos logs e na data de processamento.
+FUSO_HORARIO = os.getenv("PONTOFACIL_TIMEZONE", "America/Sao_Paulo")
+
+MODELOS_VALIDOS = {"modelo-1", "modelo-2", "modelo-3"}
+
 # Origens liberadas no CORS (separe por virgula). "*" libera todas (dev).
 CORS_ORIGINS = [
     o.strip()
@@ -35,7 +47,7 @@ MAX_ARQUIVO_BYTES = int(os.getenv("PONTOFACIL_MAX_ARQUIVO_MB", "20")) * 1024 * 1
 # Imagens menores que isso sao ampliadas antes do OCR (0 desliga).
 LARGURA_MINIMA_OCR = int(os.getenv("PONTOFACIL_OCR_LARGURA_MINIMA", "1200"))
 
-EXTENSOES_IMAGEM = {".jpg", ".jpeg", ".png", ".webp"}
+EXTENSOES_IMAGEM = {".jpg", ".jpeg", ".jfif", ".jpe", ".png", ".webp", ".pdf"}
 EXTENSOES_ZIP = {".zip"}
 
 ARGS_MCP = ["--from", "paddleocr-mcp", "paddleocr_mcp"]
@@ -111,3 +123,6 @@ def achar_uvx() -> str:
 
 def garantir_diretorios() -> None:
     DIR_SAIDA.mkdir(parents=True, exist_ok=True)
+    DIR_DADOS.mkdir(parents=True, exist_ok=True)
+    ARQUIVO_BANCO.parent.mkdir(parents=True, exist_ok=True)
+    DIR_LOGS.mkdir(parents=True, exist_ok=True)

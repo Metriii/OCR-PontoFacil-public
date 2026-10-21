@@ -19,10 +19,12 @@ consiga continuar o projeto sem ficar perdida**. Cada assunto fica em um arquivo
 | [`10-plano-integracao-central-ponto.md`](./10-plano-integracao-central-ponto.md) | Plano futuro: Central de ponto + integração por modelo |
 | [`11-integracao-central-ponto.md`](./11-integracao-central-ponto.md) | Execução: integração da Central de ponto (rotas por modelo) |
 | [`12-exclusividade-modelo1-entrada-20h.md`](./12-exclusividade-modelo1-entrada-20h.md) | Execução: scripts exclusivos do Modelo 1 em `backend/modelo1/` + regra entrada 20h–23h → 08h |
+| [`13-prompts-execucao-2026-10-21.md`](./13-prompts-execucao-2026-10-21.md) | Sessão: todos os prompts de 2026-10-21 (extensões, menu, SQLite, importação do Excel e início do Modelo 2) |
+| [`14-correcao-entrada-jose.md`](./14-correcao-entrada-jose.md) | Sessão: correção da entrada omitida no JOSE (três batidas → `08:00`) e reprocessamento do lote |
 
 ## Como usar (próxima sessão)
 
-1. Leia `04-resposta-final.md` para saber **onde paramos**.
+1. Leia o arquivo mais recente de `memoria/` (hoje, `14-correcao-entrada-jose.md`) e `04-resposta-final.md` para saber **onde paramos**.
 2. Leia `02-decisoes.md` para não contradizer decisões já tomadas.
 3. Consulte [`../docs/SDD.md`](../docs/SDD.md) e [`../docs/ARQUITETURA.md`](../docs/ARQUITETURA.md) para o design.
 4. Ao final de uma nova sessão, **adicione** um novo par de arquivos numerados

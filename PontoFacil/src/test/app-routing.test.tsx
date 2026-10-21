@@ -4,13 +4,20 @@ import { describe, expect, it } from "vitest";
 
 import { routeTree } from "@/routeTree.gen";
 import { HistoryPanel } from "@/components/ponto/HistoryPanel";
+import { RegistrosPontoPanel } from "@/components/ponto/RegistrosPontoPanel";
 import { filterRecords, type SpreadsheetRecord } from "@/lib/history";
+import type { ResumoRegistroPonto } from "@/lib/api";
 import { render, screen } from "@testing-library/react";
 
 const router = createRouter({ routeTree, context: { queryClient: new QueryClient() } });
 
 describe("App routing", () => {
-  const rotas = ["/", "/processamento/modelo-1", "/processamento/modelo-2", "/processamento/modelo-3"];
+  const rotas = [
+    "/",
+    "/processamento/modelo-1",
+    "/processamento/modelo-2",
+    "/processamento/modelo-3",
+  ];
 
   it.each(rotas)("casa a rota %s em uma página própria (não 404)", (path) => {
     const matches = router.matchRoutes(path);
@@ -43,10 +50,48 @@ describe("Histórico de planilhas (Central)", () => {
   });
 });
 
+describe("Registros de ponto (Central)", () => {
+  it("mostra estado vazio quando o banco não tem registros", () => {
+    render(<RegistrosPontoPanel registros={[]} />);
+    expect(screen.getByText("Nenhum registro de ponto salvo ainda")).toBeTruthy();
+  });
+
+  it("renderiza o resumo com período e horários sem dados", () => {
+    const registros: ResumoRegistroPonto[] = [
+      {
+        id: 1,
+        nome_funcionario: "ANA",
+        data_inicio: "2026-10-01",
+        data_fim: "2026-10-31",
+        data_processado: "2026-10-21",
+        modelo: "modelo-1",
+      },
+    ];
+    render(<RegistrosPontoPanel registros={registros} />);
+    expect(screen.getByText("ANA")).toBeTruthy();
+    expect(screen.getByText("01/10/2026 - 31/10/2026")).toBeTruthy();
+    expect(screen.getByText("Modelo 1")).toBeTruthy();
+    expect(screen.getByText("21/10/2026")).toBeTruthy();
+    expect(screen.getAllByText("-")).toHaveLength(4);
+  });
+});
+
 describe("filterRecords", () => {
   const base: SpreadsheetRecord[] = [
-    { id: "1", fileName: "Ponto_BRUNIELLY.xlsx", employee: "BRUNIELLY", generatedAt: "2026-10-20T10:00:00.000Z", model: "modelo-1" },
-    { id: "2", fileName: "Ponto_FELIPE.xlsx", employee: "FELIPE", generatedAt: "2026-10-19T10:00:00.000Z", model: "modelo-2" },
+    {
+      id: "1",
+      fileName: "Ponto_BRUNIELLY.xlsx",
+      employee: "BRUNIELLY",
+      generatedAt: "2026-10-20T10:00:00.000Z",
+      model: "modelo-1",
+    },
+    {
+      id: "2",
+      fileName: "Ponto_FELIPE.xlsx",
+      employee: "FELIPE",
+      generatedAt: "2026-10-19T10:00:00.000Z",
+      model: "modelo-2",
+    },
   ];
 
   it("filtra por busca", () => {

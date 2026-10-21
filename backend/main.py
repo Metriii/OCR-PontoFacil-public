@@ -18,8 +18,8 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import config, excel
-from .rotas import download, processar
+from . import banco, config, excel, logs
+from .rotas import download, processar, registros
 
 logging.basicConfig(level=logging.INFO)
 
@@ -39,12 +39,18 @@ app.add_middleware(
 
 app.include_router(processar.router)
 app.include_router(download.router)
+app.include_router(registros.router)
 
 
 @app.on_event("startup")
 def _startup() -> None:
     config.garantir_diretorios()
+    banco.inicializar()
     excel.limpar_planilhas_individuais(config.DIR_SAIDA)
+    logs.info(
+        "Startup",
+        f"Aplicacao iniciada; banco={banco.caminho_banco()} logs={config.DIR_LOGS}",
+    )
 
 
 @app.get("/health")

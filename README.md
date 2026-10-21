@@ -37,6 +37,23 @@ Gere um access token em https://aistudio.baidu.com e coloque em um arquivo
 `token.txt` na raiz (não versionado), ou defina a variável de ambiente
 `PADDLEOCR_MCP_AISTUDIO_ACCESS_TOKEN`.
 
+## Banco de dados e logs
+
+- **SQLite:** `data/pontofacil.db` (criado automaticamente na inicialização).
+- **Logs diários:** `logs/YYYY-MM-DD.txt` (UTF-8, uma entrada por linha).
+- Esses diretórios não são versionados. Para fazer backup, pare o backend e
+  copie `data/pontofacil.db`; para restaurar, substitua o arquivo com o
+  backend parado. Os logs podem ser copiados separadamente.
+
+Variáveis opcionais:
+
+| Variável | Padrão |
+|---|---|
+| `PONTOFACIL_DATA_DIR` | `data/` |
+| `PONTOFACIL_DB_PATH` | `data/pontofacil.db` |
+| `PONTOFACIL_LOG_DIR` | `logs/` |
+| `PONTOFACIL_TIMEZONE` | `America/Sao_Paulo` |
+
 ## Uso
 
 ```bash

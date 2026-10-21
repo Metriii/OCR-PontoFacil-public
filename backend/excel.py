@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import logging
 import re
+import time
+from io import BytesIO
 from pathlib import Path
 
 from openpyxl import Workbook
@@ -15,6 +17,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
+from . import logs
 from .mapper import CABECALHO_EXCEL
 from .modelos import FolhaProcessada
 
@@ -67,16 +70,38 @@ def gerar_xlsx_folha(folha: FolhaProcessada, destino: Path) -> Path:
     return destino
 
 
-def gerar_xlsx_consolidado(folhas: list[FolhaProcessada], destino: Path) -> Path:
-    wb = Workbook()
-    wb.remove(wb.active)
-    usados: set[str] = set()
-    for folha in folhas:
-        ws = wb.create_sheet(_nome_aba(folha.funcionario or folha.nome, usados))
-        _escrever_aba(ws, [list(CABECALHO_EXCEL), *folha.linhas_excel])
-    if not wb.sheetnames:
-        wb.create_sheet("Vazio")
-    wb.save(destino)
+def gerar_xlsx_consolidado(
+    folhas: list[FolhaProcessada],
+    destino: Path | BytesIO,
+    modelo: str | None = None,
+) -> Path | BytesIO:
+    inicio = time.monotonic()
+    logs.info(
+        "ExcelGenerator",
+        f"Inicio da geracao: {len(folhas)} folha(s), modelo={modelo or '-'}",
+    )
+    try:
+        wb = Workbook()
+        wb.remove(wb.active)
+        usados: set[str] = set()
+        for folha in folhas:
+            ws = wb.create_sheet(_nome_aba(folha.funcionario or folha.nome, usados))
+            _escrever_aba(ws, [list(CABECALHO_EXCEL), *folha.linhas_excel])
+        if not wb.sheetnames:
+            wb.create_sheet("Vazio")
+        wb.save(destino)
+    except Exception as exc:
+        logs.error(
+            "ExcelGenerator",
+            f"Falha ao gerar planilha: {exc}",
+        )
+        raise
+
+    logs.info(
+        "ExcelGenerator",
+        f"Planilha gerada com {len(folhas)} folha(s) em "
+        f"{time.monotonic() - inicio:.2f}s",
+    )
     return destino
 
 

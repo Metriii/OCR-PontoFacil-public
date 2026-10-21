@@ -275,6 +275,9 @@ Variáveis de ambiente:
 | `PADDLEOCR_MCP_AISTUDIO_ACCESS_TOKEN` | backend | token do AI Studio |
 | `PADDLEOCR_MCP_MODEL` | backend | `PaddleOCR-VL-1.6` |
 | `PADDLEOCR_MCP_PPOCR_SOURCE` | backend | `aistudio` |
+| `PONTOFACIL_DB_PATH` | backend | caminho do SQLite (padrão `data/pontofacil.db`) |
+| `PONTOFACIL_LOG_DIR` | backend | pasta dos logs (padrão `logs/`) |
+| `PONTOFACIL_TIMEZONE` | backend | fuso dos logs/datas (padrão `America/Sao_Paulo`) |
 
 ---
 
@@ -284,3 +287,18 @@ Variáveis de ambiente:
 - Imagens de folhas contêm dados pessoais → **não** versionar; descartar após processar.
 - Sanitizar nomes de arquivo/aba; validar tipo e tamanho dos uploads.
 - CORS restrito à origem do frontend em produção.
+
+---
+
+## 10. Persistência SQLite e logs
+
+- `POST /processar` recebe o campo `modelo` (`modelo-1`, `modelo-2` ou
+  `modelo-3`; padrão `modelo-1`) e persiste os registros extraídos antes de
+  gerar o Excel.
+- `GET /registros` consulta o histórico real, com filtros opcionais por
+  funcionário, data e modelo.
+- O banco fica em `data/pontofacil.db`; os logs em `logs/YYYY-MM-DD.txt`.
+- A gravação usa transações e uma chave única determinística para evitar
+  duplicidades de reprocessamentos.
+- Falhas de logging não interrompem o processamento; falhas de persistência
+  retornam erro e não são apresentadas como sucesso.

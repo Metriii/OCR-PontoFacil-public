@@ -35,6 +35,31 @@ class ResultadoProcessamento(BaseModel):
     consolidado: Planilha | None = None
 
 
+class RegistroPonto(BaseModel):
+    """Registro persistido no SQLite (contrato do historico)."""
+
+    id: int
+    nome_funcionario: str
+    data_pontos: str
+    entrada: str | None = None
+    saida_intervalo: str | None = None
+    volta_intervalo: str | None = None
+    saida_final: str | None = None
+    data_processado: str
+    modelo: str
+
+
+class ResumoRegistroPonto(BaseModel):
+    """Ultimo processamento de cada funcionario, para a tabela da Central."""
+
+    id: int
+    nome_funcionario: str
+    data_inicio: str
+    data_fim: str
+    data_processado: str
+    modelo: str
+
+
 class FolhaProcessada(BaseModel):
     """DTO interno: uma folha/colaborador processado com sucesso."""
 
@@ -44,3 +69,4 @@ class FolhaProcessada(BaseModel):
     arquivo_origem: str
     registros: list[Registro]
     linhas_excel: list[list[str]]
+    origem_hash: str | None = None

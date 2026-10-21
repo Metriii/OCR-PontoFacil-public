@@ -83,7 +83,7 @@ entrega (endpoint HTTP) que hoje **não existe**.
 
 | ID | Requisito |
 |----|-----------|
-| RF-01 | O sistema deve aceitar `jpg, jpeg, png, webp` e `zip` (contendo imagens). |
+| RF-01 | O sistema deve aceitar `jpg, jpeg, jfif, jpe, png, webp, pdf` e `zip` (contendo imagens/PDFs). |
 | RF-02 | O sistema deve processar **lote** de N imagens em uma única execução. |
 | RF-03 | O sistema deve retornar, por folha, os horários reconhecidos e uma planilha `.xlsx`. |
 | RF-04 | O sistema deve retornar uma **planilha consolidada** (opcional/agregada). |

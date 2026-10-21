@@ -7,6 +7,7 @@ abrir um servidor por imagem).
 from __future__ import annotations
 
 import base64
+import time
 from contextlib import asynccontextmanager
 from io import BytesIO
 from typing import Any
@@ -15,7 +16,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from PIL import Image, ImageOps
 
-from . import config
+from . import config, logs
 
 TOOLS_PREFERIDAS = ["paddleocr_vl", "pp_structurev3", "ocr"]
 
@@ -27,10 +28,15 @@ async def abrir_mcp():
         args=config.ARGS_MCP,
         env=config.ambiente_mcp(),
     )
+    logs.info("MCP PaddleOCR", "Abrindo sessao MCP")
     async with stdio_client(parametros) as (leitura, escrita):
         async with ClientSession(leitura, escrita) as sessao:
             await sessao.initialize()
-            yield sessao
+            logs.info("MCP PaddleOCR", "Sessao MCP inicializada")
+            try:
+                yield sessao
+            finally:
+                logs.info("MCP PaddleOCR", "Sessao MCP encerrada")
 
 
 def _escolher_tool(tools: list) -> str:
@@ -59,7 +65,7 @@ def _preparar_imagem(imagem_bytes: bytes) -> bytes:
     ampliacao (ate 3x, JPEG) melhora a leitura sem alterar a imagem original.
     """
     limite = config.LARGURA_MINIMA_OCR
-    if limite <= 0:
+    if limite <= 0 or imagem_bytes.lstrip()[:5] == b"%PDF-":
         return imagem_bytes
     try:
         with Image.open(BytesIO(imagem_bytes)) as imagem:
@@ -81,8 +87,10 @@ def _preparar_imagem(imagem_bytes: bytes) -> bytes:
 
 
 async def ocr_imagem(sessao: ClientSession, imagem_bytes: bytes) -> str:
+    inicio = time.monotonic()
     tools = (await sessao.list_tools()).tools
     nome = _escolher_tool(tools)
+    logs.debug("MCP PaddleOCR", f"Tool selecionada: {nome}")
     tool = next(t for t in tools if t.name == nome)
     schema = getattr(tool, "input_schema", None) or getattr(tool, "inputSchema", None)
     props = schema.get("properties", {}) if isinstance(schema, dict) else {}
@@ -107,4 +115,9 @@ async def ocr_imagem(sessao: ClientSession, imagem_bytes: bytes) -> str:
     if erro:
         raise RuntimeError(f"Falha no OCR: {_extrair_texto(resultado)}")
 
-    return _extrair_texto(resultado)
+    texto = _extrair_texto(resultado)
+    logs.debug(
+        "MCP PaddleOCR",
+        f"OCR concluido em {time.monotonic() - inicio:.2f}s",
+    )
+    return texto

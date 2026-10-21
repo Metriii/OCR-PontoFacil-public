@@ -16,6 +16,13 @@ resultado_ocr.json
 # Backend (planilhas geradas para download)
 backend/_out/
 
+# Banco SQLite local e logs diarios (dados de execucao)
+data/
+logs/
+*.db
+*.db-wal
+*.db-shm
+
 # Frontend (Node)
 node_modules/
 .frontend-build/

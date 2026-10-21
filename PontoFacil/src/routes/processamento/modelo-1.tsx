@@ -2,13 +2,14 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import JSZip from "jszip";
 import {
-  Clock, ImageIcon, FolderOpen, FileArchive, UploadCloud, X, Trash2, AlertCircle,
+  Clock, ImageIcon, FolderOpen, FileArchive, FileText, UploadCloud, X, Trash2, AlertCircle,
   CheckCircle2, Loader2, Download, FileSpreadsheet, Info, Check, ArrowLeft,
 } from "lucide-react";
 import {
   isBackendConnected, processarCartoes, resolveUrl,
   type Registro, type ResultadoProcessamento,
 } from "@/lib/api";
+import { MenuLateral } from "@/components/ponto/MenuLateral";
 
 export const Route = createFileRoute("/processamento/modelo-1")({
   head: () => ({
@@ -24,13 +25,16 @@ export const Route = createFileRoute("/processamento/modelo-1")({
   component: Index,
 });
 
-const IMG_EXT = ["jpg", "jpeg", "png", "webp"];
+const IMG_EXT = ["jpg", "jpeg", "jfif", "jpe", "png", "webp"];
+const PDF_EXT = ["pdf"];
 const ext = (n: string) => n.split(".").pop()?.toLowerCase() ?? "";
 const isImg = (n: string) => IMG_EXT.includes(ext(n));
+const isPdf = (n: string) => PDF_EXT.includes(ext(n));
+const isAceito = (n: string) => isImg(n) || isPdf(n);
 const fmtSize = (b: number) => b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1048576).toFixed(1)} MB`;
 
 type Item = {
-  key: string; file: File; path: string; kind: "imagem" | "zip";
+  key: string; file: File; path: string; kind: "imagem" | "pdf" | "zip";
   folder?: string | undefined; preview?: string; zipCount?: number | null;
 };
 
@@ -64,15 +68,16 @@ function Index() {
       existing.add(key);
       const folder = path.includes("/") ? path.split("/").slice(0, -1).join("/") : undefined;
       if (isImg(file.name)) novos.push({ key, file, path, kind: "imagem", folder, preview: URL.createObjectURL(file) });
+      else if (isPdf(file.name)) novos.push({ key, file, path, kind: "pdf", folder });
       else if (ext(file.name) === "zip") {
         let zipCount: number | null = null;
         try {
           const z = await JSZip.loadAsync(file);
-          zipCount = Object.values(z.files).filter((f) => !f.dir && isImg(f.name) && !f.name.startsWith("__MACOSX")).length;
-          if (zipCount === 0) warn.push(`O ZIP "${file.name}" não contém imagens suportadas.`);
+          zipCount = Object.values(z.files).filter((f) => !f.dir && isAceito(f.name) && !f.name.startsWith("__MACOSX")).length;
+          if (zipCount === 0) warn.push(`O ZIP "${file.name}" não contém arquivos suportados.`);
         } catch { warn.push(`Não foi possível ler o conteúdo de "${file.name}".`); }
         novos.push({ key, file, path, kind: "zip", zipCount });
-      } else if (!file.name.startsWith(".")) warn.push(`Formato não suportado: "${file.name}". Use JPG, JPEG, PNG, WEBP ou ZIP.`);
+      } else if (!file.name.startsWith(".")) warn.push(`Formato não suportado: "${file.name}". Use JPG, JPEG, JFIF, JPE, PNG, WEBP, PDF ou ZIP.`);
     }
     if (list.length && !novos.length && !warn.length) warn.push("Nenhuma imagem encontrada na seleção.");
     setItems((p) => [...p, ...novos]);
@@ -112,15 +117,15 @@ function Index() {
   });
   const clear = () => { items.forEach((i) => i.preview && URL.revokeObjectURL(i.preview)); setItems([]); setMsgs([]); };
 
-  const validos = items.filter((i) => i.kind === "imagem" || (i.zipCount ?? 1) > 0);
-  const totalCartoes = items.reduce((s, i) => s + (i.kind === "imagem" ? 1 : i.zipCount ?? 0), 0);
+  const validos = items.filter((i) => i.kind === "imagem" || i.kind === "pdf" || (i.zipCount ?? 1) > 0);
+  const totalCartoes = items.reduce((s, i) => s + (i.kind === "zip" ? i.zipCount ?? 0 : 1), 0);
 
   async function processar() {
     setErro(null); setLoading(true); setEtapa(0); setProgress(0);
     try {
       const r = await processarCartoes(validos.map((i) => ({ file: i.file, path: i.path })), (p) => {
         setProgress(p); if (p >= 100) setEtapa(1);
-      });
+      }, "modelo-1");
       setEtapa(3); setRes(r); setRegistros(r.registros ?? []);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Erro ao processar."); setEtapa(-1);
@@ -133,7 +138,8 @@ function Index() {
   return (
     <div className="min-h-screen">
       <header className="border-b border-border bg-card">
-        <div className="mx-auto flex max-w-6xl items-center gap-4 px-5 py-6">
+        <div className="flex items-center gap-4 px-5 py-6">
+          <MenuLateral />
           <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <Clock className="h-6 w-6" />
           </div>
@@ -159,14 +165,14 @@ function Index() {
             className={`rounded-xl border-2 border-dashed p-8 text-center transition-colors ${drag ? "border-primary bg-accent" : "border-border bg-muted"}`}
           >
             <UploadCloud className="mx-auto h-10 w-10 text-primary" />
-            <p className="mt-3 font-medium">Arraste fotos, pastas ou arquivos ZIP aqui</p>
-            <p className="text-sm text-muted-foreground">JPG, JPEG, PNG, WEBP ou ZIP com várias fotos</p>
+            <p className="mt-3 font-medium">Arraste fotos, PDFs, pastas ou arquivos ZIP aqui</p>
+            <p className="text-sm text-muted-foreground">JPG, JPEG, JFIF, JPE, PNG, WEBP, PDF ou ZIP com vários arquivos</p>
             <div className="mt-5 flex flex-wrap justify-center gap-3">
-              <PickBtn icon={<ImageIcon className="h-4 w-4" />} onClick={() => fotosRef.current?.click()}>Selecionar fotos</PickBtn>
+              <PickBtn icon={<ImageIcon className="h-4 w-4" />} onClick={() => fotosRef.current?.click()}>Selecionar arquivos</PickBtn>
               <PickBtn icon={<FolderOpen className="h-4 w-4" />} onClick={() => pastaRef.current?.click()}>Selecionar pasta</PickBtn>
               <PickBtn icon={<FileArchive className="h-4 w-4" />} onClick={() => zipRef.current?.click()}>Selecionar arquivo ZIP</PickBtn>
             </div>
-            <input ref={fotosRef} type="file" multiple hidden accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+            <input ref={fotosRef} type="file" multiple hidden accept=".jpg,.jpeg,.jfif,.jpe,.png,.webp,.pdf,image/jpeg,image/jfif,image/png,image/webp,application/pdf"
               onChange={(e) => { fromInput(e.target.files); e.target.value = ""; }} />
             <input ref={pastaRef} type="file" multiple hidden
               {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
@@ -198,7 +204,9 @@ function Index() {
                         <li key={i.key} className="flex items-center gap-3 rounded-lg border border-border bg-card p-2">
                           {i.preview
                             ? <img src={i.preview} alt={i.file.name} className="h-12 w-12 rounded object-cover" />
-                            : <div className="flex h-12 w-12 items-center justify-center rounded bg-secondary"><FileArchive className="h-5 w-5 text-primary" /></div>}
+                            : <div className="flex h-12 w-12 items-center justify-center rounded bg-secondary">
+                                {i.kind === "pdf" ? <FileText className="h-5 w-5 text-primary" /> : <FileArchive className="h-5 w-5 text-primary" />}
+                              </div>}
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-medium">{i.file.name}</p>
                             <p className="text-xs text-muted-foreground">

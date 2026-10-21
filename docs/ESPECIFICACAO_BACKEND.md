@@ -339,7 +339,7 @@ Recomendações de backend:
 - **Concorrência**: limite 2–4 chamadas simultâneas (rate-limit da API). Use `asyncio.Semaphore`
   com um pool de sessões se precisar paralelizar.
 - **Retry**: reenvio com backoff para falhas de rede/HTTP do AI Studio.
-- **Validação**: aceite só `jpg/jpeg/png/pdf`; limite de tamanho; sanitize nomes de arquivo.
+- **Validação**: aceite `jpg/jpeg/jfif/jpe/png/webp/pdf`; limite de tamanho; sanitize nomes de arquivo.
 - **Observabilidade**: registre por imagem o status, a confiança e o texto bruto (útil p/ depurar).
 - **Segurança**: o token do AI Studio é **segredo** — nunca commitar; leia de variável de
   ambiente/secret manager.
@@ -372,3 +372,20 @@ Recomendações de backend:
 - [ ] Excel com **1 aba por imagem**.
 - [ ] Tratamento de erro/retry e limites de concorrência.
 - [ ] Teste com 2+ imagens de layouts diferentes.
+
+---
+
+## 12. Persistência e histórico (implementado)
+
+- **`POST /processar`** aceita o campo multipart `modelo` (`modelo-1` padrão,
+  `modelo-2` ou `modelo-3`). Os registros são gravados no SQLite antes da
+  geração do Excel.
+- **Banco:** `data/pontofacil.db`, tabela `registros_ponto`, com WAL,
+  transação por lote e deduplicação por `chave_unica`.
+- **`GET /registros`** retorna o histórico com filtros opcionais
+  `funcionario`, `data`, `modelo`, `limite` e `offset`.
+- **Logs:** `logs/YYYY-MM-DD.txt`, no formato
+  `data hora | LEVEL | componente | mensagem | lote=...`.
+- **Configuração:** `PONTOFACIL_DATA_DIR`, `PONTOFACIL_DB_PATH`,
+  `PONTOFACIL_LOG_DIR` e `PONTOFACIL_TIMEZONE`.
+- Detalhes da execução em [`RELATORIO_IMPLEMENTACAO_SQLITE_LOGS.md`](./RELATORIO_IMPLEMENTACAO_SQLITE_LOGS.md).

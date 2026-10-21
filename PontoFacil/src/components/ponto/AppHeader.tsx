@@ -1,10 +1,13 @@
 import { Link } from "@tanstack/react-router";
 import { Clock } from "lucide-react";
 
+import { MenuLateral } from "@/components/ponto/MenuLateral";
+
 export function AppHeader() {
   return (
     <header className="border-b bg-card">
-      <div className="mx-auto flex h-20 max-w-[1200px] items-center px-4 sm:px-6">
+      <div className="flex h-20 w-full items-center gap-2 px-4 sm:gap-3 sm:px-6">
+        <MenuLateral />
         <Link to="/" className="flex items-center gap-4">
           <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <Clock className="h-6 w-6" />
