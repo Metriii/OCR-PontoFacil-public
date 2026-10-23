@@ -10,7 +10,8 @@ import re
 from datetime import date
 
 from ..modelos import Registro
-from .parser import separar_linha
+from .normalizacao import normalizar_folha
+from .parser import CamposLinha, JornadaPrevista, separar_linha
 
 _HORA_RE = re.compile(r"(\d{1,2})[:h.](\d{2})")
 _DATA_RE = re.compile(r"(\d{2})/(\d{2})/(\d{4})")
@@ -158,31 +159,32 @@ def registro_tem_conteudo(registro: Registro) -> bool:
     )
 
 
-def map_registro(
-    linha: list[str],
+def _combinar_observacao(anotacao: str, ajuste: str) -> str | None:
+    if not ajuste:
+        return anotacao or None
+    if not anotacao:
+        return ajuste
+    return f"{anotacao} {ajuste}"
+
+
+def _mapear_campos(
+    campos: CamposLinha,
     indice: int,
     referencia: str | None,
     funcionario: str | None,
 ) -> tuple[Registro, list[str]]:
-    campos = separar_linha(linha)
-    if campos is None:
-        dia = (linha[0] if linha else "").strip()
-        semana_ocr = (linha[1] if len(linha) > 1 else "").strip()
-        entrada = saida_almoco = volta_almoco = saida = None
-        anotacao = ""
-    else:
-        dia = campos.dia
-        semana_ocr = campos.semana
-        entrada = campos.entrada or None
-        saida_almoco = campos.saida_almoco or None
-        volta_almoco = campos.volta_almoco or None
-        saida = campos.saida or None
-        anotacao = campos.observacao
+    dia = campos.dia
+    semana_ocr = campos.semana
+    entrada = campos.entrada or None
+    saida_almoco = campos.saida_almoco or None
+    volta_almoco = campos.volta_almoco or None
+    saida = campos.saida or None
+    anotacao = campos.observacao
 
     data_obj = _data_do_dia(dia, referencia)
     semana = _dia_semana(data_obj) or semana_ocr or None
 
-    observacao: str | None = anotacao or None
+    observacao = _combinar_observacao(anotacao, campos.ajuste)
     entrada_padrao = False
     if entrada is None and any(
         hora is not None for hora in (saida_almoco, volta_almoco, saida)
@@ -205,7 +207,14 @@ def map_registro(
     )
     if inconsistente:
         confianca = min(confianca, LIMIAR_REVISAO)
-    revisar = presentes < 4 or confianca < LIMIAR_REVISAO or inconsistente
+    if campos.ajuste:
+        confianca = min(confianca, LIMIAR_REVISAO)
+    revisar = (
+        presentes < 4
+        or confianca < LIMIAR_REVISAO
+        or inconsistente
+        or campos.forcar_revisao
+    )
 
     nome = funcionario or "folha"
     registro = Registro(
@@ -239,3 +248,52 @@ def map_registro(
         ),
     ]
     return registro, linha_excel
+
+
+def map_registro(
+    linha: list[str],
+    indice: int,
+    referencia: str | None,
+    funcionario: str | None,
+) -> tuple[Registro, list[str]]:
+    campos = separar_linha(linha)
+    if campos is None:
+        campos = CamposLinha(
+            dia=(linha[0] if linha else "").strip(),
+            semana=(linha[1] if len(linha) > 1 else "").strip(),
+            entrada="",
+            saida_almoco="",
+            volta_almoco="",
+            saida="",
+            observacao="",
+        )
+    return _mapear_campos(campos, indice, referencia, funcionario)
+
+
+def mapear_folha(
+    linhas: list[list[str]],
+    referencia: str | None,
+    funcionario: str | None,
+    jornada: JornadaPrevista | None = None,
+) -> tuple[list[Registro], list[list[str]]]:
+    """Mapeia a folha inteira depois de normalizar os horarios."""
+    campos = [separar_linha(linha) for linha in linhas]
+    validos = [campos_linha for campos_linha in campos if campos_linha is not None]
+    normalizados = iter(normalizar_folha(validos, jornada))
+
+    registros: list[Registro] = []
+    linhas_excel: list[list[str]] = []
+    for indice, linha in enumerate(linhas):
+        campos_linha = campos[indice]
+        if campos_linha is None:
+            registro, linha_excel = map_registro(
+                linha, indice, referencia, funcionario
+            )
+        else:
+            registro, linha_excel = _mapear_campos(
+                next(normalizados), indice, referencia, funcionario
+            )
+        linhas_excel.append(linha_excel)
+        if registro_tem_conteudo(registro):
+            registros.append(registro)
+    return registros, linhas_excel

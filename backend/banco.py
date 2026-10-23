@@ -37,6 +37,16 @@ CREATE INDEX IF NOT EXISTS idx_registros_modelo_data
     ON registros_ponto (modelo, data_pontos);
 CREATE INDEX IF NOT EXISTS idx_registros_processado
     ON registros_ponto (data_processado);
+CREATE TRIGGER IF NOT EXISTS trg_ignorar_dia_sem_horarios
+BEFORE INSERT ON registros_ponto
+FOR EACH ROW
+WHEN COALESCE(TRIM(NEW.entrada), '') = ''
+ AND COALESCE(TRIM(NEW.saida_intervalo), '') = ''
+ AND COALESCE(TRIM(NEW.volta_intervalo), '') = ''
+ AND COALESCE(TRIM(NEW.saida_final), '') = ''
+BEGIN
+    SELECT RAISE(IGNORE);
+END;
 """
 
 _CAMPOS = (
@@ -46,10 +56,23 @@ _CAMPOS = (
 
 _HORA_RE = re.compile(r"^\d{2}:\d{2}$")
 _DIA_MES_RE = re.compile(r"^(\d{1,2})(?:\D.*)?$")
+_CAMPOS_HORARIO = (
+    "entrada",
+    "saida_almoco",
+    "volta_almoco",
+    "saida",
+)
 
 
 class ErroBanco(RuntimeError):
     """Falha de inicializacao, consulta ou gravacao no SQLite."""
+
+
+def _sem_horarios(registro: Registro) -> bool:
+    """Dia sem nenhuma das quatro batidas nao gera linha no banco."""
+    return all(
+        not (getattr(registro, campo) or "").strip() for campo in _CAMPOS_HORARIO
+    )
 
 
 def _conectar() -> sqlite3.Connection:
@@ -67,7 +90,7 @@ def inicializar() -> None:
     try:
         with conexao:
             conexao.executescript(_ESQUEMA)
-            conexao.execute("PRAGMA user_version=1")
+            conexao.execute("PRAGMA user_version=2")
     except sqlite3.Error as exc:
         logs.error("SQLite", f"Falha ao inicializar banco: {exc}")
         raise ErroBanco(f"Falha ao inicializar o banco SQLite: {exc}") from exc
@@ -187,8 +210,9 @@ def inserir_folhas(
 ) -> dict[str, int]:
     """Persiste os registros de um lote em uma unica transacao.
 
-    Retorna ``{"inseridos", "duplicados", "ignorados"}``. Registros sem data
-    valida sao ignorados e contabilizados; horarios ausentes viram NULL.
+    Retorna ``{"inseridos", "duplicados", "ignorados", "vazios"}``. Dias sem
+    nenhuma das quatro batidas nao sao gravados; registros sem data valida sao
+    ignorados e horarios ausentes viram NULL.
     """
     if modelo not in config.MODELOS_VALIDOS:
         raise ValueError(f"Modelo invalido: {modelo}")
@@ -196,9 +220,13 @@ def inserir_folhas(
     data_processado = logs.agora().date().isoformat()
     linhas: list[tuple] = []
     ignorados = 0
+    vazios = 0
 
     for folha in folhas:
         for registro in folha.registros:
+            if _sem_horarios(registro):
+                vazios += 1
+                continue
             linha = _registro_para_linha(registro, folha, modelo, data_processado)
             if linha is None:
                 ignorados += 1
@@ -238,16 +266,24 @@ def inserir_folhas(
             f"{ignorados} registro(s) ignorado(s) por data ausente/invalida",
             lote,
         )
+    if vazios:
+        logs.info(
+            "SQLite",
+            f"{vazios} dia(s) sem horarios nao persistido(s); "
+            "permanecem apenas no Excel",
+            lote,
+        )
     logs.info(
         "SQLite",
         f"Persistencia concluida: inseridos={inseridos}, "
-        f"duplicados={duplicados}, ignorados={ignorados}",
+        f"duplicados={duplicados}, ignorados={ignorados}, vazios={vazios}",
         lote,
     )
     return {
         "inseridos": inseridos,
         "duplicados": duplicados,
         "ignorados": ignorados,
+        "vazios": vazios,
     }
 
 

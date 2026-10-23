@@ -7,8 +7,8 @@ Uso (a partir da raiz do projeto):
 Cada aba vira um funcionario e cada linha vira um registro de ponto. A coluna A
 traz somente o dia do mes (1..31) e e gravada assim em ``data_pontos``; as
 colunas B, C, D e E trazem entrada, saida para intervalo, volta do intervalo e
-saida final. A coluna F (``Hora total``) e ignorada. Dias sem horario tambem
-sao importados, com horarios nulos.
+saida final. A coluna F (``Hora total``) e ignorada. Dias sem nenhuma das
+quatro batidas permanecem no Excel, mas nao sao gravados no banco.
 """
 
 from __future__ import annotations
@@ -143,7 +143,7 @@ def importar(caminho: Path, modelo: str = "modelo-1") -> dict[str, int]:
 
     folhas = ler_folhas(caminho)
     if not folhas:
-        return {"inseridos": 0, "duplicados": 0, "ignorados": 0}
+        return {"inseridos": 0, "duplicados": 0, "ignorados": 0, "vazios": 0}
 
     config.garantir_diretorios()
     banco.inicializar()

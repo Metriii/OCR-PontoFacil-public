@@ -17,7 +17,7 @@ vi.mock("@tanstack/react-router", () => ({
 import { ModelCards } from "@/components/ponto/ModelCards";
 
 describe("ModelCards", () => {
-  it("habilita o Modelo 2 com link para a página própria", () => {
+  it("habilita os três modelos com link para a página própria", () => {
     render(<ModelCards />);
 
     expect(screen.getByRole("link", { name: /Modelo 1/ })).toHaveAttribute(
@@ -28,6 +28,10 @@ describe("ModelCards", () => {
       "href",
       "/processamento/modelo-2",
     );
-    expect(screen.getByText("Em breve")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Modelo 3/ })).toHaveAttribute(
+      "href",
+      "/processamento/modelo-3",
+    );
+    expect(screen.queryByText("Em breve")).toBeNull();
   });
 });

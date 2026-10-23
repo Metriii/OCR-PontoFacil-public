@@ -74,7 +74,7 @@ Na última execução, os testes do backend estavam passando:
 .\.venv\Scripts\python.exe -m unittest discover -s backend/tests -v
 ```
 
-Resultado: **55 testes OK**.
+Resultado: **100 testes OK** (87 anteriores + 13 novos do Modelo 2).
 
 ---
 
@@ -207,8 +207,11 @@ Responsabilidades:
 4. Extrair o período:
    - formato `dd/mm/aaaa a|até|–|- dd/mm/aaaa`;
    - procurar no grid e, se necessário, no markdown inteiro.
-5. Listar as linhas de dia (primeira célula com dia entre 1 e 31).
-6. Separar cada linha:
+5. Extrair a jornada e o intervalo impressos no cabeçalho:
+   - `08:00 às 17:00` e `12:00 às 13:00`;
+   - usados como evidência para recuperar entrada omitida, nunca isoladamente.
+6. Listar as linhas de dia (primeira célula com dia entre 1 e 31).
+7. Separar cada linha:
    - dia;
    - dia da semana opcional;
    - primeiras quatro horas válidas após o dia;
@@ -216,6 +219,22 @@ Responsabilidades:
    - rejeitar textos como `FALTA`, `FERIADO`, `--` e `N/A` como horário;
    - tolerar coluna deslocada e entrada embutida na primeira/segunda célula;
    - realinhar três batidas quando a coluna Entrada for omitida pelo OCR.
+
+#### `backend/modelo2/normalizacao.py`
+
+Responsabilidades:
+
+1. Recuperar entrada omitida quando houver evidência combinada:
+   - coluna vazia/deslocada;
+   - jornada do cabeçalho;
+   - padrão de entradas válidas da folha;
+   - quantidade de batidas.
+2. Preservar entrada legítima tardia quando a linha tiver quatro batidas válidas.
+3. Calcular medianas por coluna usando as linhas válidas da própria folha.
+4. Reparar sequências impossíveis com no máximo um campo por linha.
+5. Se o reparo não for seguro, anular o campo e marcar revisão.
+6. Nunca aceitar `saída do intervalo > volta do intervalo` ou
+   `saída final <= volta do intervalo`.
 
 #### `backend/modelo2/mapper.py`
 
@@ -227,9 +246,10 @@ Responsabilidades:
    - tratar período que vira o mês (ex.: `25/09/2026` a `24/10/2026`).
 3. Calcular o dia da semana pela data real.
    - Fallback: usar a sigla lida pelo OCR.
-4. Normalizar horários.
+4. Mapear a folha inteira com `mapear_folha`, usando a normalização antes de
+   gerar banco/Excel.
 5. Calcular confiança e marcar `revisar`.
-6. Guardar `FALTA`/`FERIADO` em `observacao`.
+6. Guardar `FALTA`/`FERIADO` e ajustes automáticos em `observacao`.
 7. Montar a linha do Excel no mesmo formato do Modelo 1.
 
 #### `backend/servico.py`
@@ -298,15 +318,21 @@ Regras propostas para a primeira versão:
 2. **Hora Extra e assinatura**: ignoradas.
 3. **Dia da semana**: calculado pela data do período; se não houver período,
    usar a sigla do OCR.
-4. **Entrada omitida/ilegível**: quando o OCR entregar apenas três batidas
-   deslocadas (saída do intervalo, volta e saída final), realinhar para a
-   direita e preencher `08:00`; também preencher `08:00` quando a entrada vier
-   ilegível e houver evidência de jornada no dia (outro horário preenchido).
-5. **Regra dos 20h**: não aplicar a regra do Modelo 1
+4. **Entrada omitida/ilegível**: quando houver evidência de que a coluna
+   Entrada foi omitida, deslocar as batidas para a direita e preencher
+   `08:00`. A evidência combina jornada do cabeçalho, padrão das linhas
+   válidas e quantidade de batidas; o horário isolado não é suficiente.
+   Entradas legítimas entre `10:30` e `12:00` com quatro batidas são
+   preservadas.
+5. **Sequências impossíveis**: se `saída do intervalo > volta do intervalo`
+   ou `saída final <= volta do intervalo`, reparar pela mediana da folha com
+   no máximo um campo por linha. Se não houver reparo seguro, anular o campo
+   e marcar `revisar`.
+6. **Regra dos 20h**: não aplicar a regra do Modelo 1
    (`20:xx–23:xx -> 08:xx`), que é específica dos cartões do Modelo 1.
-6. **FALTA/FERIADO**: não gerar horários; registrar a anotação em
+7. **FALTA/FERIADO**: não gerar horários; registrar a anotação em
    `observacao` e marcar para revisão.
-7. **Dias em branco**: manter no Excel; no banco, avaliar se entram como
+8. **Dias em branco**: manter no Excel; no banco, avaliar se entram como
    registro sem horários ou se são ignorados (decisão pendente).
 
 ---
@@ -470,20 +496,29 @@ teste depois.
 
 ## 12. Resultado da execução
 
-- Backend: `backend/modelo2/parser.py` e `mapper.py`; `servico.processar_folhas_modelo2`;
-  dispatch de `modelo-2` em `backend/rotas/processar.py`.
+- Backend: `backend/modelo2/parser.py`, `normalizacao.py` e `mapper.py`;
+  `servico.processar_folhas_modelo2`; dispatch de `modelo-2` em
+  `backend/rotas/processar.py`.
 - Frontend: `modelo-2.tsx` clonado de `modelo-1.tsx`; card do Modelo 2 habilitado em
   `ModelCards.tsx`; teste de card adicionado.
-- Testes: 87 testes Python OK; 13 testes Vitest OK; build e `compileall` OK.
+- Testes: **100 testes Python OK**; 13 testes Vitest OK; build e `compileall` OK.
 - Amanda: funcionário `AMANDA RAFAELE LIMA DA SILVA`, período
   `01/09/2026 a 30/09/2026`, 19 registros gerados e 30 linhas no Excel.
 - Anotações reconhecidas: `Feria.` em 07/09 e 16/09; `FALTA Justificado` em 09/09.
 - JOSE: entrada omitida pelo OCR foi realinhada; dias típicos ficaram
   `08:00 | 13:30 | 14:30 | 17:20` e o lote antigo foi corrigido no banco.
+- LUIZ: três batidas iniciando às `11:00` e uma batida de `13:00` passaram a
+  ser recuperadas com `08:00` quando a jornada do cabeçalho confirma a omissão.
+- WILLISSY: `14:37` corrigido para a mediana da folha.
+- KARINE, ALISSON, JOAO e LUANA: normalização por mediana, inversão curta ou
+  remoção segura do campo, sempre marcando `revisar`.
 - Hora Extra e assinatura ignoradas; a assinatura não entra em `observacao`.
 - Miniatura sintética não criada; o card usa a imagem `modelo2.jpg` existente.
 - Lint global ainda falha por CRLF pré-existente em vários arquivos do frontend;
   os arquivos alterados passam no ESLint.
+- Reprocessamento real via OCR não concluído em 2026-10-22: o PaddleOCR
+  retornou `TimeoutError` ao ler `LUIZ VINICIUS.jpg`. Nenhum Excel novo foi
+  gerado; a validação usou os testes e as imagens de referência.
 
 ---
 
@@ -493,3 +528,4 @@ teste depois.
 | --- | --- |
 | 2026-10-21 | Criação do documento com o processo e o plano do Modelo 2. |
 | 2026-10-21 | Implementação e validação do Modelo 2; lint global pendente por CRLF pré-existente. |
+| 2026-10-22 | Normalização por folha: entrada omitida com evidência de jornada e reparo de sequências impossíveis pela mediana. |

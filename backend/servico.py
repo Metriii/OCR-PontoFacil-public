@@ -15,6 +15,8 @@ from . import config, logs, mcp_client, parser
 from .mapper import map_registro
 from .modelo2 import mapper as modelo2_mapper
 from .modelo2 import parser as modelo2_parser
+from .modelo3 import mapper as modelo3_mapper
+from .modelo3 import parser as modelo3_parser
 from .modelos import FolhaProcessada
 
 log = logging.getLogger("pontofacil")
@@ -32,6 +34,11 @@ class _Fluxo:
     ]
     manter_registro: Callable[[Any], bool]
     aceitar_sem_registros: bool = False
+    jornada_prevista: Callable[[list[list[str]], str], Any] | None = None
+    map_folha: Callable[
+        [list[list[str]], str | None, str | None, Any],
+        tuple[list[Any], list[list[str]]],
+    ] | None = None
 
 
 _FLUXO_MODELO1 = _Fluxo(
@@ -51,6 +58,18 @@ _FLUXO_MODELO2 = _Fluxo(
     map_registro=modelo2_mapper.map_registro,
     manter_registro=modelo2_mapper.registro_tem_conteudo,
     aceitar_sem_registros=True,
+    jornada_prevista=modelo2_parser.jornada_prevista,
+    map_folha=modelo2_mapper.mapear_folha,
+)
+
+_FLUXO_MODELO3 = _Fluxo(
+    selecionar_grid=modelo3_parser.selecionar_grid,
+    nome_colaborador=modelo3_parser.nome_colaborador,
+    referencia=modelo3_parser.referencia,
+    linhas_dia=modelo3_parser.linhas_dia,
+    map_registro=modelo3_mapper.map_registro,
+    manter_registro=lambda _registro: True,
+    map_folha=modelo3_mapper.mapear_folha,
 )
 
 
@@ -134,13 +153,23 @@ async def _processar_com(
 
             registros = []
             linhas_excel = []
-            for i, linha in enumerate(linhas):
-                registro, linha_excel = fluxo.map_registro(
-                    linha, i, referencia, funcionario
+            if fluxo.map_folha is not None:
+                jornada = (
+                    fluxo.jornada_prevista(grid, markdown)
+                    if fluxo.jornada_prevista is not None
+                    else None
                 )
-                linhas_excel.append(linha_excel)
-                if fluxo.manter_registro(registro):
-                    registros.append(registro)
+                registros, linhas_excel = fluxo.map_folha(
+                    linhas, referencia, funcionario, jornada
+                )
+            else:
+                for i, linha in enumerate(linhas):
+                    registro, linha_excel = fluxo.map_registro(
+                        linha, i, referencia, funcionario
+                    )
+                    linhas_excel.append(linha_excel)
+                    if fluxo.manter_registro(registro):
+                        registros.append(registro)
 
             if not registros and not fluxo.aceitar_sem_registros:
                 logs.warning(
@@ -192,3 +221,11 @@ async def processar_folhas_modelo2(
 ) -> tuple[list[FolhaProcessada], list[str]]:
     """Executa o pipeline da folha diaria (Modelo 2)."""
     return await _processar_com(imagens, lote, _FLUXO_MODELO2)
+
+
+async def processar_folhas_modelo3(
+    imagens: list[tuple[str, bytes]],
+    lote: str | None = None,
+) -> tuple[list[FolhaProcessada], list[str]]:
+    """Executa o pipeline do cartao tradicional quinzenal (Modelo 3)."""
+    return await _processar_com(imagens, lote, _FLUXO_MODELO3)

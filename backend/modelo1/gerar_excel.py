@@ -28,6 +28,8 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
+from ..horarios import corrigir_artefato_2
+
 BORDA_LADO = Side(style="thin", color="D0D0D0")
 BORDA = Border(left=BORDA_LADO, right=BORDA_LADO, top=BORDA_LADO, bottom=BORDA_LADO)
 
@@ -87,8 +89,11 @@ def _dia_texto(valor: str) -> Optional[str]:
 
 
 def _hora_corrigida(valor: str) -> Optional[str]:
-    """Normaliza um horario e remove o prefixo indevido 20 (20XX:XX)."""
-    m = _HORA_RE.search(_corrigir_prefixo_20(valor))
+    """Normaliza um horario, removendo prefixos de OCR (20XX e artefato 2)."""
+    texto = _corrigir_prefixo_20(valor)
+    if (hora := corrigir_artefato_2(texto)) is not None:
+        return hora
+    m = _HORA_RE.search(texto)
     if not m:
         return None
     h, mi = int(m.group(1)), int(m.group(2))

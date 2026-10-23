@@ -63,12 +63,13 @@ class TestImportarExcel(unittest.TestCase):
         resultado = importar_excel.importar(self.arquivo, "modelo-1")
 
         self.assertEqual(
-            resultado, {"inseridos": 3, "duplicados": 0, "ignorados": 0}
+            resultado,
+            {"inseridos": 2, "duplicados": 0, "ignorados": 0, "vazios": 1},
         )
         registros = banco.listar_registros()
-        self.assertEqual(len(registros), 3)
+        self.assertEqual(len(registros), 2)
         self.assertEqual(
-            [registro["data_pontos"] for registro in registros], ["27", "2", "1"]
+            [registro["data_pontos"] for registro in registros], ["27", "1"]
         )
 
         dia_um = banco.listar_registros(data="1")[0]
@@ -76,9 +77,7 @@ class TestImportarExcel(unittest.TestCase):
         self.assertEqual(dia_um["entrada"], "08:00")
         self.assertEqual(dia_um["saida_final"], "17:00")
 
-        dia_dois = banco.listar_registros(data="2")[0]
-        self.assertIsNone(dia_dois["entrada"])
-        self.assertIsNone(dia_dois["saida_final"])
+        self.assertEqual(banco.listar_registros(data="2"), [])
 
         feriado = banco.listar_registros(data="27")[0]
         self.assertEqual(feriado["entrada"], "08:05")
@@ -89,9 +88,10 @@ class TestImportarExcel(unittest.TestCase):
         resultado = importar_excel.importar(self.arquivo, "modelo-1")
 
         self.assertEqual(
-            resultado, {"inseridos": 0, "duplicados": 3, "ignorados": 0}
+            resultado,
+            {"inseridos": 0, "duplicados": 2, "ignorados": 0, "vazios": 1},
         )
-        self.assertEqual(len(banco.listar_registros()), 3)
+        self.assertEqual(len(banco.listar_registros()), 2)
 
     def test_arquivo_inexistente(self) -> None:
         with self.assertRaises(FileNotFoundError):

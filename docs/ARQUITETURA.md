@@ -111,8 +111,8 @@ PontoFacil/src/
 │   ├── index.tsx             # Central de ponto (histórico + cards de modelos)
 │   └── processamento/
 │       ├── modelo-1.tsx      # tela original (upload, revisão, planilhas)
-│       ├── modelo-2.tsx      # placeholder "Em breve"
-│       └── modelo-3.tsx      # placeholder "Em breve"
+│       ├── modelo-2.tsx      # folha diária (Modelo 2)
+│       └── modelo-3.tsx      # cartão tradicional (Modelo 3)
 ├── components/
 │   ├── ponto/                # AppHeader, HistoryPanel, ModelCards (Central)
 │   └── ui/                   # componentes shadcn
@@ -134,7 +134,7 @@ PontoFacil/src/
   (estado vazio real, ainda sem endpoint) e os cards dos três modelos.
 - **`src/routes/processamento/modelo-1.tsx`** é a tela de processamento atual:
   consome esses tipos, exibe a tabela de revisão e gera o Excel consolidado.
-- Os Modelos 2 e 3 possuem apenas páginas provisórias "Em breve"; nenhuma
+- Os Modelos 2 e 3 já possuem páginas próprias e módulos de processamento independentes em `backend/modelo2/` e `backend/modelo3/`.
   regra de processamento foi implementada para eles.
 
 ---
@@ -300,5 +300,9 @@ Variáveis de ambiente:
 - O banco fica em `data/pontofacil.db`; os logs em `logs/YYYY-MM-DD.txt`.
 - A gravação usa transações e uma chave única determinística para evitar
   duplicidades de reprocessamentos.
+- A trigger `trg_ignorar_dia_sem_horarios` impede inserir um dia sem as quatro
+  batidas; o Excel continua exibindo esse dia com as células em branco.
+- O nome de cada aba do Excel vem do arquivo de imagem enviado, sem extensão,
+  e não do nome lido pelo OCR.
 - Falhas de logging não interrompem o processamento; falhas de persistência
   retornam erro e não são apresentadas como sucesso.

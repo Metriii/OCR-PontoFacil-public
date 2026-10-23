@@ -13,8 +13,8 @@ from unittest.mock import patch
 RAIZ = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(RAIZ))
 
-from backend.modelo2 import mapper, parser  # noqa: E402
-from backend.modelo2.parser import separar_linha  # noqa: E402
+from backend.modelo2 import mapper, normalizacao, parser  # noqa: E402
+from backend.modelo2.parser import JornadaPrevista, separar_linha  # noqa: E402
 
 REFERENCIA = "01/09/2026 a 30/09/2026"
 REFERENCIA_ATRAVESSA_MES = "25/09/2026 a 24/10/2026"
@@ -57,6 +57,21 @@ MARKDOWN = (
 
 def _map(linha: list[str], indice: int = 0, referencia: str | None = REFERENCIA):
     return mapper.map_registro(linha, indice, referencia, "AMANDA RAFAELE LIMA DA SILVA")
+
+
+JORNADA_17 = JornadaPrevista("08:00", "17:00", "12:00", "13:00")
+JORNADA_18 = JornadaPrevista("08:00", "18:00", "12:00", "14:00")
+
+
+def _normalizar(
+    linhas: list[list[str]],
+    jornada: JornadaPrevista | None = JORNADA_17,
+):
+    campos = [separar_linha(linha) for linha in linhas]
+    return normalizacao.normalizar_folha(
+        [campo for campo in campos if campo is not None],
+        jornada,
+    )
 
 
 class TestParserModelo2(unittest.TestCase):
@@ -198,11 +213,54 @@ class TestParserModelo2(unittest.TestCase):
         assert campos is not None
         self.assertEqual(campos.observacao, "Feria.")
 
+    def test_extrai_jornada_e_intervalo_do_cabecalho(self) -> None:
+        grid = parser.selecionar_grid(MARKDOWN)
+        assert grid is not None
+        texto = MARKDOWN + (
+            "<p>Segunda à Sexta 08:00 às 17:00 12:00 às 13:00</p>"
+        )
+        self.assertEqual(
+            parser.jornada_prevista(grid, texto),
+            JORNADA_17,
+        )
+
     def test_corrige_prefixo_20_e_preserva_horario_noturno(self) -> None:
         self.assertEqual(parser._hora("2008:07"), "08:07")
         self.assertEqual(parser._hora("2013:17"), "13:17")
         self.assertEqual(parser._hora("20:30"), "20:30")
         self.assertEqual(parser._hora("2008.07"), "08:07")
+
+    def test_remove_artefato_2_dos_horarios_vermelhos(self) -> None:
+        casos = {
+            "2:08:12": "08:12",
+            "2:13:00": "13:00",
+            "2:13:59": "13:59",
+            "2:18:00": "18:00",
+            "2 08:05": "08:05",
+            "208:05": "08:05",
+            "213:01": "13:01",
+            "02:08": "02:08",
+            "2:08": "02:08",
+            "20:08": "20:08",
+        }
+        for bruto, esperado in casos.items():
+            with self.subTest(bruto=bruto):
+                self.assertEqual(parser._hora(bruto), esperado)
+
+    def test_linha_vanessa_com_artefato_2(self) -> None:
+        campos = separar_linha(
+            ["17", "", "2:08:12", "2:13:00", "2:13:59", "2:18:00"]
+        )
+        assert campos is not None
+        self.assertEqual(
+            (
+                campos.entrada,
+                campos.saida_almoco,
+                campos.volta_almoco,
+                campos.saida,
+            ),
+            ("08:12", "13:00", "13:59", "18:00"),
+        )
 
 
 class TestMapperModelo2(unittest.TestCase):
@@ -296,6 +354,139 @@ class TestMapperModelo2(unittest.TestCase):
         self.assertEqual(linha_excel[1:], ["", "", "", "", ""])
 
 
+class TestNormalizacaoModelo2(unittest.TestCase):
+    def test_luiz_tres_batidas_11h_recupera_entrada(self) -> None:
+        campos = _normalizar(
+            [["01", "Ter", "11:00", "12:00", "17:30", "", ""]]
+        )[0]
+        self.assertEqual(campos.entrada, "")
+        self.assertEqual(campos.saida_almoco, "11:00")
+        self.assertEqual(campos.volta_almoco, "12:00")
+        self.assertEqual(campos.saida, "17:30")
+        self.assertTrue(campos.forcar_revisao)
+
+        registro, linha_excel = mapper.mapear_folha(
+            [["01", "Ter", "11:00", "12:00", "17:30", "", ""]],
+            REFERENCIA,
+            "LUIZ VINICIUS",
+            JORNADA_17,
+        )
+        self.assertEqual(registro[0].entrada, "08:00")
+        self.assertEqual(registro[0].saida_almoco, "11:00")
+        self.assertEqual(linha_excel[0][1:5], ["08:00", "11:00", "12:00", "17:30"])
+
+    def test_luiz_uma_batida_13h_recupera_entrada(self) -> None:
+        campos = _normalizar([["10", "Qui", "13:00", "", "", "", ""]])[0]
+        self.assertEqual(campos.entrada, "")
+        self.assertEqual(campos.saida_almoco, "13:00")
+        self.assertEqual(campos.volta_almoco, "")
+        self.assertEqual(campos.saida, "")
+
+    def test_willissy_corrige_saida_14_37_pela_mediana(self) -> None:
+        campos = _normalizar(
+            [
+                ["01", "Ter", "08:00", "11:37", "12:37", "17:03"],
+                ["21", "Seg", "08:00", "14:37", "12:37", "17:03"],
+            ],
+            JORNADA_18,
+        )
+        self.assertEqual(campos[1].saida_almoco, "11:37")
+        self.assertEqual(campos[1].volta_almoco, "12:37")
+        self.assertTrue(campos[1].forcar_revisao)
+        self.assertIn("mediana", campos[1].ajuste)
+
+    def test_karine_recupera_entrada_e_corrige_inversao_curta(self) -> None:
+        campos = _normalizar(
+            [
+                ["01", "Ter", "07:50", "13:10", "14:10", "17:20"],
+                ["02", "Qua", "13:09", "14:12", "14:10", ""],
+            ],
+            JORNADA_18,
+        )
+        self.assertEqual(campos[1].entrada, "")
+        self.assertEqual(campos[1].saida_almoco, "13:09")
+        self.assertEqual(campos[1].volta_almoco, "14:12")
+        self.assertEqual(campos[1].saida, "14:13")
+        self.assertTrue(campos[1].forcar_revisao)
+
+    def test_karine_tres_batidas_11_50_recupera_entrada(self) -> None:
+        campos = _normalizar(
+            [
+                ["01", "Ter", "07:50", "13:10", "14:10", "17:20"],
+                ["12", "Sab", "11:50", "12:20", "14:10", ""],
+            ],
+            JORNADA_18,
+        )
+        self.assertEqual(campos[1].entrada, "")
+        self.assertEqual(campos[1].saida_almoco, "11:50")
+        self.assertEqual(campos[1].volta_almoco, "12:20")
+        self.assertEqual(campos[1].saida, "14:10")
+
+    def test_alisson_corrige_retorno_14_31(self) -> None:
+        campos = _normalizar(
+            [
+                ["01", "Ter", "08:00", "11:32", "13:32", "19:20"],
+                ["08", "Ter", "08:00", "11:31", "14:31", "19:20"],
+            ],
+            JORNADA_17,
+        )
+        self.assertEqual(campos[1].volta_almoco, "13:32")
+        self.assertTrue(campos[1].forcar_revisao)
+
+    def test_luana_remove_retorno_quando_nao_ha_reparo_seguro(self) -> None:
+        campos = _normalizar(
+            [
+                ["01", "Qui", "07:55", "13:39", "14:40", "17:00"],
+                ["26", "Sab", "07:56", "11:02", "14:34", "14:03"],
+            ],
+            JORNADA_18,
+        )
+        self.assertEqual(campos[1].volta_almoco, "")
+        self.assertEqual(campos[1].saida, "14:03")
+        self.assertTrue(campos[1].forcar_revisao)
+        self.assertIn("removido", campos[1].ajuste)
+
+    def test_joao_corrige_inversao_de_um_minuto(self) -> None:
+        campos = _normalizar(
+            [
+                ["01", "Ter", "08:00", "12:33", "13:34", "18:00"],
+                ["02", "Qua", "08:00", "12:32", "12:31", "18:00"],
+            ],
+            JORNADA_18,
+        )
+        self.assertEqual(campos[1].volta_almoco, "12:33")
+        self.assertTrue(campos[1].forcar_revisao)
+
+    def test_entrada_legitima_tardia_com_quatro_batidas_e_preservada(self) -> None:
+        campos = _normalizar(
+            [
+                ["01", "Ter", "11:00", "12:00", "13:00", "17:00"],
+                ["02", "Qua", "10:30", "12:00", "13:00", "17:00"],
+            ]
+        )
+        self.assertEqual(campos[0].entrada, "11:00")
+        self.assertEqual(campos[1].entrada, "10:30")
+        self.assertEqual(campos[0].ajuste, "")
+        self.assertEqual(campos[1].ajuste, "")
+
+    def test_tres_batidas_11_12_13_nao_sao_deslocadas(self) -> None:
+        campos = _normalizar(
+            [["02", "Qua", "11:00", "12:00", "13:00", ""]]
+        )[0]
+        self.assertEqual(campos.entrada, "11:00")
+        self.assertEqual(campos.saida_almoco, "12:00")
+        self.assertEqual(campos.volta_almoco, "13:00")
+        self.assertEqual(campos.ajuste, "")
+
+    def test_atestado_com_uma_batida_nao_recupera_entrada(self) -> None:
+        campos = _normalizar(
+            [["21", "Seg", "10:40", "", "", "Atestado"]],
+            JORNADA_18,
+        )[0]
+        self.assertEqual(campos.entrada, "10:40")
+        self.assertEqual(campos.ajuste, "")
+
+
 class TestPipelineModelo2(unittest.IsolatedAsyncioTestCase):
     async def test_processa_folha_diaria_e_mantem_dias_em_branco_so_no_excel(self) -> None:
         from backend import config, servico
@@ -327,6 +518,49 @@ class TestPipelineModelo2(unittest.IsolatedAsyncioTestCase):
             ["01/09/2026", "02/09/2026", "09/09/2026", "27/09/2026"],
         )
         self.assertEqual(len(folha.linhas_excel), 6)
+
+    async def test_pipeline_recupera_entrada_omitida_com_jornada_do_cabecalho(self) -> None:
+        from backend import config, servico
+
+        linhas = [
+            ["01", "Ter", "11:00", "12:00", "17:30", "", ""],
+            ["10", "Qui", "13:00", "", "", "", ""],
+        ]
+        markdown = (
+            "<p>Empregado: 058 - LUIZ VINICIUS DE SOUZA SANTANA</p>"
+            "<p>Período: 01/09/2026 a 30/09/2026</p>"
+            "<p>Segunda à Sexta 08:00 às 17:00 12:00 às 13:00</p>"
+            + _tabela(CABECALHO)
+            + _tabela(linhas)
+        )
+
+        @asynccontextmanager
+        async def abrir_falso():
+            yield object()
+
+        async def ocr_falso(_sessao, _dados):
+            return markdown
+
+        with tempfile.TemporaryDirectory() as pasta:
+            raiz = Path(pasta)
+            with (
+                patch.object(config, "DIR_LOGS", raiz / "logs"),
+                patch.object(servico.mcp_client, "abrir_mcp", abrir_falso),
+                patch.object(servico.mcp_client, "ocr_imagem", ocr_falso),
+            ):
+                folhas, avisos = await servico.processar_folhas_modelo2(
+                    [("luiz.jpg", b"imagem")]
+                )
+
+        self.assertEqual(avisos, [])
+        self.assertEqual(len(folhas), 1)
+        registros = folhas[0].registros
+        self.assertEqual(registros[0].entrada, "08:00")
+        self.assertEqual(registros[0].saida_almoco, "11:00")
+        self.assertEqual(registros[0].volta_almoco, "12:00")
+        self.assertEqual(registros[0].saida, "17:30")
+        self.assertEqual(registros[1].entrada, "08:00")
+        self.assertEqual(registros[1].saida_almoco, "13:00")
 
 
 if __name__ == "__main__":

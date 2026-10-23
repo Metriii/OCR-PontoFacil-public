@@ -40,6 +40,12 @@ def _nome_aba(nome: str, usados: set[str]) -> str:
     return final
 
 
+def _nome_folha(folha: FolhaProcessada) -> str:
+    """Usa o nome do arquivo enviado, nao o nome lido pelo OCR."""
+    arquivo = Path((folha.arquivo_origem or "").strip()).stem
+    return arquivo or folha.funcionario or folha.nome or "Folha"
+
+
 def _escrever_aba(ws: Worksheet, linhas: list[list[str]]) -> None:
     for r, linha in enumerate(linhas, start=1):
         for c, valor in enumerate(linha, start=1):
@@ -64,7 +70,7 @@ def _escrever_aba(ws: Worksheet, linhas: list[list[str]]) -> None:
 def gerar_xlsx_folha(folha: FolhaProcessada, destino: Path) -> Path:
     wb = Workbook()
     ws = wb.active or wb.create_sheet("Folha")
-    ws.title = _nome_aba(folha.funcionario or folha.nome, set())
+    ws.title = _nome_aba(_nome_folha(folha), set())
     _escrever_aba(ws, [list(CABECALHO_EXCEL), *folha.linhas_excel])
     wb.save(destino)
     return destino
@@ -85,7 +91,7 @@ def gerar_xlsx_consolidado(
         wb.remove(wb.active)
         usados: set[str] = set()
         for folha in folhas:
-            ws = wb.create_sheet(_nome_aba(folha.funcionario or folha.nome, usados))
+            ws = wb.create_sheet(_nome_aba(_nome_folha(folha), usados))
             _escrever_aba(ws, [list(CABECALHO_EXCEL), *folha.linhas_excel])
         if not wb.sheetnames:
             wb.create_sheet("Vazio")

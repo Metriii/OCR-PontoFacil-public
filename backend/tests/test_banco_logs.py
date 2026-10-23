@@ -95,7 +95,10 @@ class TestBancoSQLite(BaseTemporaria):
     def test_cria_banco_tabela_e_persiste_campos(self) -> None:
         resultado = banco.inserir_folhas([_folha()], "modelo-1")
 
-        self.assertEqual(resultado, {"inseridos": 1, "duplicados": 0, "ignorados": 0})
+        self.assertEqual(
+            resultado,
+            {"inseridos": 1, "duplicados": 0, "ignorados": 0, "vazios": 0},
+        )
         self.assertTrue(config.ARQUIVO_BANCO.exists())
         registros = banco.listar_registros()
         self.assertEqual(len(registros), 1)
@@ -109,7 +112,7 @@ class TestBancoSQLite(BaseTemporaria):
         self.assertEqual(registro["modelo"], "modelo-1")
         self.assertRegex(registro["data_processado"], r"^\d{4}-\d{2}-\d{2}$")
 
-    def test_horarios_nulos_sao_aceitos(self) -> None:
+    def test_dia_sem_horarios_nao_e_persistido(self) -> None:
         folha = _folha(
             [
                 _registro(
@@ -121,17 +124,96 @@ class TestBancoSQLite(BaseTemporaria):
                 )
             ]
         )
-        banco.inserir_folhas([folha], "modelo-1")
+
+        resultado = banco.inserir_folhas([folha], "modelo-1")
+
+        self.assertEqual(
+            resultado,
+            {"inseridos": 0, "duplicados": 0, "ignorados": 0, "vazios": 1},
+        )
+        self.assertEqual(banco.listar_registros(), [])
+
+    def test_dia_com_apenas_um_horario_e_persistido(self) -> None:
+        folha = _folha(
+            [
+                _registro(
+                    data="06/10/2026",
+                    entrada="08:00",
+                    saida_almoco=None,
+                    volta_almoco=None,
+                    saida=None,
+                )
+            ]
+        )
+
+        resultado = banco.inserir_folhas([folha], "modelo-1")
+
+        self.assertEqual(resultado["inseridos"], 1)
+        self.assertEqual(resultado["vazios"], 0)
         registro = banco.listar_registros()[0]
-        self.assertIsNone(registro["entrada"])
+        self.assertEqual(registro["entrada"], "08:00")
         self.assertIsNone(registro["saida_intervalo"])
         self.assertIsNone(registro["volta_intervalo"])
         self.assertIsNone(registro["saida_final"])
 
+    def test_trigger_ignora_insert_direto_sem_horarios(self) -> None:
+        conexao = sqlite3.connect(config.ARQUIVO_BANCO)
+        try:
+            vazio = conexao.execute(
+                """
+                INSERT INTO registros_ponto (
+                    nome_funcionario, data_pontos, entrada, saida_intervalo,
+                    volta_intervalo, saida_final, data_processado, modelo,
+                    chave_unica
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "TRIGGER",
+                    "06",
+                    "",
+                    None,
+                    "   ",
+                    None,
+                    "2026-10-22",
+                    "modelo-1",
+                    "trigger-vazio",
+                ),
+            )
+            com_um_horario = conexao.execute(
+                """
+                INSERT INTO registros_ponto (
+                    nome_funcionario, data_pontos, entrada, saida_intervalo,
+                    volta_intervalo, saida_final, data_processado, modelo,
+                    chave_unica
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "TRIGGER",
+                    "07",
+                    "08:00",
+                    None,
+                    None,
+                    None,
+                    "2026-10-22",
+                    "modelo-1",
+                    "trigger-com-horario",
+                ),
+            )
+            conexao.commit()
+        finally:
+            conexao.close()
+
+        self.assertEqual(vazio.rowcount, 0)
+        self.assertEqual(com_um_horario.rowcount, 1)
+        self.assertEqual(len(banco.listar_registros(funcionario="TRIGGER")), 1)
+
     def test_deduplica_e_preserva_registros_anteriores(self) -> None:
         banco.inserir_folhas([_folha()], "modelo-1")
         repetido = banco.inserir_folhas([_folha()], "modelo-1")
-        self.assertEqual(repetido, {"inseridos": 0, "duplicados": 1, "ignorados": 0})
+        self.assertEqual(
+            repetido,
+            {"inseridos": 0, "duplicados": 1, "ignorados": 0, "vazios": 0},
+        )
 
         nova_data = banco.inserir_folhas(
             [_folha([_registro(data="02/10/2026")])], "modelo-1"
@@ -143,7 +225,10 @@ class TestBancoSQLite(BaseTemporaria):
         resultado = banco.inserir_folhas(
             [_folha([_registro(data="sem data")])], "modelo-1"
         )
-        self.assertEqual(resultado, {"inseridos": 0, "duplicados": 0, "ignorados": 1})
+        self.assertEqual(
+            resultado,
+            {"inseridos": 0, "duplicados": 0, "ignorados": 1, "vazios": 0},
+        )
         self.assertEqual(banco.listar_registros(), [])
 
     def test_falha_na_transacao_faz_rollback(self) -> None:

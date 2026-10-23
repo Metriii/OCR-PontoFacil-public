@@ -30,4 +30,7 @@ node_modules/
 # Imagens da folha de ponto (dados pessoais)
 *.jpg
 *.jpeg
+*.jfif
+*.jpe
 *.png
+*.webp

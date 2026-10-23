@@ -13,8 +13,8 @@ Excel, usando o **MCP do PaddleOCR** (modelo `PaddleOCR-VL-1.6` via AI Studio).
    e gera `folha_presenca.xlsx`.
 
 > Esses dois scripts são **exclusivos do Modelo 1**
-> (`/processamento/modelo-1`); os modelos 2 e 3 terão os seus próprios
-> módulos. Regra do Modelo 1: entrada lida entre 20h e 23h vira 08h
+> (`/processamento/modelo-1`); os modelos 2 e 3 têm módulos próprios em `backend/modelo2/` e `backend/modelo3/`.
+> Regra do Modelo 1: entrada lida entre 20h e 23h vira 08h
 > preservando os minutos (`20:30` → `08:30`).
 
 ## Requisitos

@@ -250,6 +250,47 @@ class TestPrefixo20(unittest.TestCase):
         self.assertEqual(grupos[0][1][5], "08:00")
 
 
+class TestArtefato2(unittest.TestCase):
+    """Remove o "2" que o OCR le antes dos horarios vermelhos."""
+
+    def test_remove_artefato_2(self) -> None:
+        casos = {
+            "2:08:12": "08:12",
+            "2:13:00": "13:00",
+            "2:13:59": "13:59",
+            "2:18:00": "18:00",
+            "2 08:05": "08:05",
+            "208:05": "08:05",
+            "213:01": "13:01",
+        }
+        for bruto, esperado in casos.items():
+            with self.subTest(bruto=bruto):
+                self.assertEqual(gerar_excel._hora_corrigida(bruto), esperado)
+
+    def test_preserva_horarios_legitimos(self) -> None:
+        self.assertEqual(mapper._normalizar_hora("02:08"), "02:08")
+        self.assertEqual(mapper._normalizar_hora("2:08"), "02:08")
+        self.assertEqual(mapper._normalizar_hora("20:08"), "20:08")
+
+    def test_linha_vanessa_com_artefato_2(self) -> None:
+        registro, linha_excel = _registro(
+            ["17", "", "2:08:12", "2:13:00", "2:13:59", "2:18:00"]
+        )
+        self.assertEqual(
+            (
+                registro.entrada,
+                registro.saida_almoco,
+                registro.volta_almoco,
+                registro.saida,
+            ),
+            ("08:12", "13:00", "13:59", "18:00"),
+        )
+        self.assertEqual(
+            linha_excel[1:5],
+            ["08:12", "13:00", "13:59", "18:00"],
+        )
+
+
 class TestEntradaTarde(unittest.TestCase):
     """Regra do Modelo 1: entrada 20:XX..23:XX vira 08:XX (minutos iguais)."""
 
@@ -433,7 +474,7 @@ class TestSaidaConsolidada(unittest.TestCase):
             nome=funcionario,
             funcionario=funcionario,
             referencia=REFERENCIA,
-            arquivo_origem=f"{funcionario.lower()}.jpg",
+            arquivo_origem=f"{funcionario}.jpg",
             registros=[registro],
             linhas_excel=[linha_excel],
         )
@@ -448,6 +489,45 @@ class TestSaidaConsolidada(unittest.TestCase):
             self.assertEqual(wb.sheetnames, ["ANA", "BRUNO"])
             self.assertEqual(wb["ANA"].cell(row=1, column=1).value, "Dia da semana")
             self.assertEqual(wb["BRUNO"].cell(row=2, column=1).value, "01 - terça-feira")
+
+    def test_nome_da_aba_usa_arquivo_enviado_e_nao_o_nome_do_ocr(self) -> None:
+        folha = self._folha("ANA")
+        folha.nome = "NOME LIDO PELO OCR"
+        folha.funcionario = "NOME LIDO PELO OCR"
+        folha.arquivo_origem = r"C:\fotos\FOTO ANA 2.jfif"
+
+        with tempfile.TemporaryDirectory() as pasta:
+            destino = gerar_xlsx_consolidado(
+                [folha], Path(pasta) / "consolidado.xlsx"
+            )
+            wb = load_workbook(destino)
+            self.assertEqual(wb.sheetnames, ["FOTO ANA 2"])
+
+    def test_nome_da_aba_individual_usa_arquivo_enviado(self) -> None:
+        folha = self._folha("ANA")
+        folha.arquivo_origem = "LARISSA JORDANA 3.jpg"
+
+        with tempfile.TemporaryDirectory() as pasta:
+            destino = gerar_xlsx_folha(folha, Path(pasta) / "folha.xlsx")
+            ws = load_workbook(destino).active
+            self.assertEqual(ws.title, "LARISSA JORDANA 3")
+
+    def test_consolidado_preserva_dia_vazio_com_celulas_em_branco(self) -> None:
+        folha = self._folha("ANA")
+        folha.linhas_excel.insert(0, ["06", "", "", "", "", ""])
+
+        with tempfile.TemporaryDirectory() as pasta:
+            destino = gerar_xlsx_consolidado(
+                [folha], Path(pasta) / "consolidado.xlsx"
+            )
+            wb = load_workbook(destino)
+            ws = wb["ANA"]
+            self.assertEqual(ws.cell(row=2, column=1).value, "06")
+            self.assertEqual(
+                [ws.cell(row=2, column=coluna).value for coluna in range(2, 7)],
+                [None, None, None, None, None],
+            )
+            self.assertEqual(ws.cell(row=3, column=1).value, "01 - terça-feira")
 
     def test_limpeza_apaga_individuais_e_preserva_consolidados(self) -> None:
         with tempfile.TemporaryDirectory() as pasta:

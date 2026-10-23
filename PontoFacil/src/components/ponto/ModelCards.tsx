@@ -22,7 +22,7 @@ const MODELS = [
     ready: true,
     to: "/processamento/modelo-2",
   },
-  { id: "modelo-3", name: "Modelo 3", desc: "Cartão tradicional", img: m3, ready: false },
+  { id: "modelo-3", name: "Modelo 3", desc: "Cartão tradicional", img: m3, ready: true, to: "/processamento/modelo-3" },
 ] as const;
 
 export function ModelCards() {

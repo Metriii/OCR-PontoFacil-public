@@ -12,6 +12,8 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
+from ..horarios import corrigir_artefato_2
+
 _TABELA_RE = re.compile(r"<table[^>]*>(.*?)</table>", re.S | re.I)
 _ROW_RE = re.compile(r"<tr[^>]*>(.*?)</tr>", re.S | re.I)
 _CELL_RE = re.compile(r"<t[dh][^>]*>(.*?)</t[dh]>", re.S | re.I)
@@ -43,6 +45,11 @@ _PERIODO_RE = re.compile(
 
 _HORA_RE = re.compile(r"(\d{1,2})[:h.](\d{2})")
 _PREFIXO_20_RE = re.compile(r"(?<!\d)20(\d{2})([:h.])(\d{2})(?!\d)")
+_JORNADA_RE = re.compile(
+    r"(\d{1,2}[:h.]\d{2})\s*(?:às|as|a|até|ate|[\-\u2013\u2014])\s*"
+    r"(\d{1,2}[:h.]\d{2})",
+    re.IGNORECASE,
+)
 _SEMANA_RE = re.compile(r"\b(seg|ter|qua|qui|sex|sab|dom)[a-z]*\b")
 _SEMANA_CANONICA = {
     "seg": "Seg",
@@ -73,6 +80,18 @@ class CamposLinha:
     volta_almoco: str
     saida: str
     observacao: str
+    ajuste: str = ""
+    forcar_revisao: bool = False
+
+
+@dataclass(frozen=True)
+class JornadaPrevista:
+    """Jornada impressa no cabecalho da folha."""
+
+    entrada: str
+    saida: str | None = None
+    intervalo_inicio: str | None = None
+    intervalo_fim: str | None = None
 
 
 def _texto_celula(valor: str) -> str:
@@ -130,7 +149,10 @@ def _corrigir_prefixo_20(valor: str) -> str:
 
 
 def _hora(valor: str) -> str | None:
-    m = _HORA_RE.search(_corrigir_prefixo_20(valor))
+    texto = _corrigir_prefixo_20(valor)
+    if (hora := corrigir_artefato_2(texto)) is not None:
+        return hora
+    m = _HORA_RE.search(texto)
     if not m:
         return None
     h, mi = int(m.group(1)), int(m.group(2))
@@ -318,3 +340,54 @@ def referencia(
         if m:
             return f"{m.group(1)} a {m.group(2)}"
     return None
+
+
+def jornada_prevista(
+    grid: list[list[str]], texto: str | None = None
+) -> JornadaPrevista | None:
+    """Extrai a jornada e o intervalo impressos no cabecalho.
+
+    O OCR pode devolver o cabecalho em celulas separadas ou em texto solto.
+    A faixa mais longa e tratada como jornada; a faixa contida nela e tratada
+    como intervalo.
+    """
+    partes = [" ".join(linha) for linha in grid]
+    if texto:
+        partes.append(_texto_plano(texto))
+    plano = " ".join(partes)
+
+    faixas: list[tuple[int, int, str, str]] = []
+    for m in _JORNADA_RE.finditer(plano):
+        inicio = _hora(m.group(1))
+        fim = _hora(m.group(2))
+        if inicio is None or fim is None:
+            continue
+        a = _minutos_hora(inicio)
+        b = _minutos_hora(fim)
+        if a is None or b is None or a >= b:
+            continue
+        faixas.append((a, b, inicio, fim))
+
+    if not faixas:
+        return None
+
+    jornada = max(faixas, key=lambda faixa: faixa[1] - faixa[0])
+    if jornada[1] - jornada[0] < 240:
+        return None
+
+    intervalo = next(
+        (
+            faixa
+            for faixa in faixas
+            if faixa is not jornada
+            and faixa[0] >= jornada[0]
+            and faixa[1] <= jornada[1]
+        ),
+        None,
+    )
+    return JornadaPrevista(
+        entrada=jornada[2],
+        saida=jornada[3],
+        intervalo_inicio=intervalo[2] if intervalo else None,
+        intervalo_fim=intervalo[3] if intervalo else None,
+    )

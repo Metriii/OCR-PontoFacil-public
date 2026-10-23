@@ -91,6 +91,10 @@ async def processar(
         folhas, avisos_ocr = await servico.processar_folhas_modelo2(
             imagens, lote=lote
         )
+    elif modelo == "modelo-3":
+        folhas, avisos_ocr = await servico.processar_folhas_modelo3(
+            imagens, lote=lote
+        )
     else:
         folhas, avisos_ocr = await servico.processar_folhas(imagens, lote=lote)
 
@@ -123,7 +127,8 @@ async def processar(
             "API",
             f"Persistencia do lote: inseridos={persistencia['inseridos']}, "
             f"duplicados={persistencia['duplicados']}, "
-            f"ignorados={persistencia['ignorados']}",
+            f"ignorados={persistencia['ignorados']}, "
+            f"vazios={persistencia['vazios']}",
             lote,
         )
 
