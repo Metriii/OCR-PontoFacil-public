@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ProcessamentoModelo1RouteImport } from './routes/processamento/modelo-1'
 import { Route as ProcessamentoModelo2RouteImport } from './routes/processamento/modelo-2'
 import { Route as ProcessamentoModelo3RouteImport } from './routes/processamento/modelo-3'
+import { Route as ProcessamentoModelo4RouteImport } from './routes/processamento/modelo-4'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -34,18 +35,25 @@ const ProcessamentoModelo3Route = ProcessamentoModelo3RouteImport.update({
   path: '/processamento/modelo-3',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProcessamentoModelo4Route = ProcessamentoModelo4RouteImport.update({
+  id: '/processamento/modelo-4',
+  path: '/processamento/modelo-4',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/processamento/modelo-1': typeof ProcessamentoModelo1Route
   '/processamento/modelo-2': typeof ProcessamentoModelo2Route
   '/processamento/modelo-3': typeof ProcessamentoModelo3Route
+  '/processamento/modelo-4': typeof ProcessamentoModelo4Route
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/processamento/modelo-1': typeof ProcessamentoModelo1Route
   '/processamento/modelo-2': typeof ProcessamentoModelo2Route
   '/processamento/modelo-3': typeof ProcessamentoModelo3Route
+  '/processamento/modelo-4': typeof ProcessamentoModelo4Route
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,6 +61,7 @@ export interface FileRoutesById {
   '/processamento/modelo-1': typeof ProcessamentoModelo1Route
   '/processamento/modelo-2': typeof ProcessamentoModelo2Route
   '/processamento/modelo-3': typeof ProcessamentoModelo3Route
+  '/processamento/modelo-4': typeof ProcessamentoModelo4Route
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -61,18 +70,21 @@ export interface FileRouteTypes {
     | '/processamento/modelo-1'
     | '/processamento/modelo-2'
     | '/processamento/modelo-3'
+    | '/processamento/modelo-4'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/processamento/modelo-1'
     | '/processamento/modelo-2'
     | '/processamento/modelo-3'
+    | '/processamento/modelo-4'
   id:
     | '__root__'
     | '/'
     | '/processamento/modelo-1'
     | '/processamento/modelo-2'
     | '/processamento/modelo-3'
+    | '/processamento/modelo-4'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -80,6 +92,7 @@ export interface RootRouteChildren {
   ProcessamentoModelo1Route: typeof ProcessamentoModelo1Route
   ProcessamentoModelo2Route: typeof ProcessamentoModelo2Route
   ProcessamentoModelo3Route: typeof ProcessamentoModelo3Route
+  ProcessamentoModelo4Route: typeof ProcessamentoModelo4Route
 }
 
 declare module '@tanstack/react-router' {
@@ -112,6 +125,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProcessamentoModelo3RouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/processamento/modelo-4': {
+      id: '/processamento/modelo-4'
+      path: '/processamento/modelo-4'
+      fullPath: '/processamento/modelo-4'
+      preLoaderRoute: typeof ProcessamentoModelo4RouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -120,6 +140,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProcessamentoModelo1Route: ProcessamentoModelo1Route,
   ProcessamentoModelo2Route: ProcessamentoModelo2Route,
   ProcessamentoModelo3Route: ProcessamentoModelo3Route,
+  ProcessamentoModelo4Route: ProcessamentoModelo4Route,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -17,6 +17,7 @@ const ITENS = [
   { to: "/processamento/modelo-1", label: "Modelo 1", icon: FileSpreadsheet, exact: false },
   { to: "/processamento/modelo-2", label: "Modelo 2", icon: FileSpreadsheet, exact: false },
   { to: "/processamento/modelo-3", label: "Modelo 3", icon: FileSpreadsheet, exact: false },
+  { to: "/processamento/modelo-4", label: "Modelo 4", icon: FileSpreadsheet, exact: false },
 ] as const;
 
 export function MenuLateral() {

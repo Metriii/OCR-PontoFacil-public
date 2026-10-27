@@ -100,7 +100,7 @@ entrega (endpoint HTTP) que hoje **não existe**.
 | RNF-02 | O backend deve reutilizar **uma sessão MCP** para todo o lote (não abrir por imagem). |
 | RNF-03 | O token do AI Studio deve vir de variável de ambiente / arquivo ignorado pelo Git. |
 | RNF-04 | O upload deve reportar progresso (já implementado no frontend via XHR). |
-| RNF-05 | O backend deve limitar concorrência (2–4 chamadas simultâneas) por rate-limit. |
+| RNF-05 | O backend deve limitar concorrência (1–8 chamadas simultâneas, padrão 5) por rate-limit. |
 | RNF-06 | Deve haver tratamento de erro e retorno com mensagem legível ao usuário. |
 | RNF-07 | Nomes de arquivo/aba devem ser sanitizados (sem `\ / ? * [ ] :`). |
 

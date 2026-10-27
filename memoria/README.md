@@ -26,10 +26,14 @@ consiga continuar o projeto sem ficar perdida**. Cada assunto fica em um arquivo
 | [`17-correcao-prefixo-horarios-2quinzena.md`](./17-correcao-prefixo-horarios-2quinzena.md) | Execução: correção do prefixo `2:` nos horários da 2ª quinzena, diagnóstico e reprocessamento |
 | [`18-trigger-dias-vazios-e-nome-por-arquivo.md`](./18-trigger-dias-vazios-e-nome-por-arquivo.md) | Execução: trigger de dias vazios, nome da aba pelo arquivo e roadmap de otimizações |
 | [`19-correcao-artefato-2-vanessa.md`](./19-correcao-artefato-2-vanessa.md) | Execução: remoção do artefato `2` nos horários vermelhos e correção da Vanessa |
+| [`20-modelo2-horarios-compactos-e-revisao.md`](./20-modelo2-horarios-compactos-e-revisao.md) | Execução: horários compactos no parser do Modelo 2 e coluna `Revisar` no Excel |
+| [`21-ocr-concorrente.md`](./21-ocr-concorrente.md) | Execução: OCR concorrente por lote, configuração, testes e validação real |
+| [`22-sincronizacao-excel.md`](./22-sincronizacao-excel.md) | Execução: sincronização automática Excel → SQLite com metadados, watcher e upsert |
+| [`23-modelo4-registro-mensal.md`](./23-modelo4-registro-mensal.md) | Execução: Modelo 4 (registro mensal), margem branca no OCR, parser, frontend e validação real |
 
 ## Como usar (próxima sessão)
 
-1. Leia o arquivo mais recente de `memoria/` (hoje, `19-correcao-artefato-2-vanessa.md`) e `04-resposta-final.md` para saber **onde paramos**.
+1. Leia o arquivo mais recente de `memoria/` (hoje, `23-modelo4-registro-mensal.md`) e `04-resposta-final.md` para saber **onde paramos**.
 2. Leia `02-decisoes.md` para não contradizer decisões já tomadas.
 3. Consulte [`../docs/SDD.md`](../docs/SDD.md) e [`../docs/ARQUITETURA.md`](../docs/ARQUITETURA.md) para o design.
 4. Ao final de uma nova sessão, **adicione** um novo par de arquivos numerados

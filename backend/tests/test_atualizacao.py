@@ -486,7 +486,10 @@ class TestSaidaConsolidada(unittest.TestCase):
                 folhas, Path(pasta) / "consolidado.xlsx"
             )
             wb = load_workbook(destino)
-            self.assertEqual(wb.sheetnames, ["ANA", "BRUNO"])
+            self.assertEqual(
+                [nome for nome in wb.sheetnames if nome != "_PontoFacil"],
+                ["ANA", "BRUNO"],
+            )
             self.assertEqual(wb["ANA"].cell(row=1, column=1).value, "Dia da semana")
             self.assertEqual(wb["BRUNO"].cell(row=2, column=1).value, "01 - terça-feira")
 
@@ -501,7 +504,10 @@ class TestSaidaConsolidada(unittest.TestCase):
                 [folha], Path(pasta) / "consolidado.xlsx"
             )
             wb = load_workbook(destino)
-            self.assertEqual(wb.sheetnames, ["FOTO ANA 2"])
+            self.assertEqual(
+                [nome for nome in wb.sheetnames if nome != "_PontoFacil"],
+                ["FOTO ANA 2"],
+            )
 
     def test_nome_da_aba_individual_usa_arquivo_enviado(self) -> None:
         folha = self._folha("ANA")
@@ -570,6 +576,7 @@ class TestSaidaConsolidada(unittest.TestCase):
                 patch.object(config, "DIR_DADOS", Path(pasta) / "data"),
                 patch.object(config, "ARQUIVO_BANCO", Path(pasta) / "data" / "teste.db"),
                 patch.object(config, "DIR_LOGS", Path(pasta) / "logs"),
+                patch.object(config, "SYNC_EXCEL_ATIVO", False),
             ):
                 with TestClient(app) as cliente:
                     resposta = cliente.post(

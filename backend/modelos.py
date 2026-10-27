@@ -70,3 +70,4 @@ class FolhaProcessada(BaseModel):
     registros: list[Registro]
     linhas_excel: list[list[str]]
     origem_hash: str | None = None
+    data_processado: str | None = None

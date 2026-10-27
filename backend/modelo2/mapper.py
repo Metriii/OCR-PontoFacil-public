@@ -16,6 +16,16 @@ from .parser import CamposLinha, JornadaPrevista, separar_linha
 _HORA_RE = re.compile(r"(\d{1,2})[:h.](\d{2})")
 _DATA_RE = re.compile(r"(\d{2})/(\d{2})/(\d{4})")
 
+CABECALHO_EXCEL_MODELO2 = [
+    "Dia da semana",
+    "Entrar",
+    "Sa\u00edda para intervalo",
+    "Volta intervalo",
+    "Sa\u00edda",
+    "Hora total",
+    "Revisar",
+]
+
 LIMIAR_REVISAO = 0.7
 ENTRADA_PADRAO = "08:00"
 OBSERVACAO_ENTRADA_PADRAO = (
@@ -246,6 +256,7 @@ def _mapear_campos(
             volta_almoco or "",
             saida or "",
         ),
+        "Sim" if revisar and any(pontas) else "",
     ]
     return registro, linha_excel
 

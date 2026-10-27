@@ -29,14 +29,18 @@ async def abrir_mcp():
         env=config.ambiente_mcp(),
     )
     logs.info("MCP PaddleOCR", "Abrindo sessao MCP")
-    async with stdio_client(parametros) as (leitura, escrita):
-        async with ClientSession(leitura, escrita) as sessao:
-            await sessao.initialize()
-            logs.info("MCP PaddleOCR", "Sessao MCP inicializada")
-            try:
-                yield sessao
-            finally:
-                logs.info("MCP PaddleOCR", "Sessao MCP encerrada")
+    config.DIR_LOGS.mkdir(parents=True, exist_ok=True)
+    with (config.DIR_LOGS / "mcp-stderr.log").open(
+        "a", encoding="utf-8", errors="replace"
+    ) as errlog:
+        async with stdio_client(parametros, errlog=errlog) as (leitura, escrita):
+            async with ClientSession(leitura, escrita) as sessao:
+                await sessao.initialize()
+                logs.info("MCP PaddleOCR", "Sessao MCP inicializada")
+                try:
+                    yield sessao
+                finally:
+                    logs.info("MCP PaddleOCR", "Sessao MCP encerrada")
 
 
 def _escolher_tool(tools: list) -> str:
@@ -58,29 +62,30 @@ def _extrair_texto(resultado: Any) -> str:
 
 
 def _preparar_imagem(imagem_bytes: bytes) -> bytes:
-    """Amplia fotos pequenas para o OCR nao perder colunas de horario.
+    """Amplia e adiciona margem para o OCR nao perder colunas de horario.
 
     Folhas fotografadas com menos de ``config.LARGURA_MINIMA_OCR`` pixels de
     largura costumam perder a primeira coluna e/ou confundir os digitos. A
-    ampliacao (ate 3x, JPEG) melhora a leitura sem alterar a imagem original.
+    margem branca evita que a ultima coluna de horario encoste na borda da
+    imagem, onde o detector de tabela costuma cortar os minutos. A ampliacao
+    (ate 3x, JPEG) melhora a leitura sem alterar a imagem original.
     """
     limite = config.LARGURA_MINIMA_OCR
     if limite <= 0 or imagem_bytes.lstrip()[:5] == b"%PDF-":
         return imagem_bytes
     try:
-        with Image.open(BytesIO(imagem_bytes)) as imagem:
-            if imagem.width >= limite:
-                return imagem_bytes
-            imagem = ImageOps.exif_transpose(imagem)
-            escala = min(3.0, limite / imagem.width)
-            if escala <= 1.0:
-                return imagem_bytes
-            tamanho = (round(imagem.width * escala), round(imagem.height * escala))
-            ampliada = imagem.resize(tamanho, Image.Resampling.LANCZOS)
-            if ampliada.mode not in ("RGB", "L"):
-                ampliada = ampliada.convert("RGB")
+        with Image.open(BytesIO(imagem_bytes)) as origem:
+            imagem = ImageOps.exif_transpose(origem)
+            margem = max(24, round(max(imagem.size) * 0.05))
+            imagem = ImageOps.expand(imagem, border=margem, fill="white")
+            if imagem.width < limite:
+                escala = min(3.0, limite / imagem.width)
+                tamanho = (round(imagem.width * escala), round(imagem.height * escala))
+                imagem = imagem.resize(tamanho, Image.Resampling.LANCZOS)
+            if imagem.mode not in ("RGB", "L"):
+                imagem = imagem.convert("RGB")
             buffer = BytesIO()
-            ampliada.save(buffer, format="JPEG", quality=92)
+            imagem.save(buffer, format="JPEG", quality=92)
             return buffer.getvalue()
     except (OSError, ValueError):
         return imagem_bytes

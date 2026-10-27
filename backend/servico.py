@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import io
 import logging
@@ -17,6 +18,8 @@ from .modelo2 import mapper as modelo2_mapper
 from .modelo2 import parser as modelo2_parser
 from .modelo3 import mapper as modelo3_mapper
 from .modelo3 import parser as modelo3_parser
+from .modelo4 import mapper as modelo4_mapper
+from .modelo4 import parser as modelo4_parser
 from .modelos import FolhaProcessada
 
 log = logging.getLogger("pontofacil")
@@ -72,6 +75,16 @@ _FLUXO_MODELO3 = _Fluxo(
     map_folha=modelo3_mapper.mapear_folha,
 )
 
+_FLUXO_MODELO4 = _Fluxo(
+    selecionar_grid=modelo4_parser.selecionar_grid,
+    nome_colaborador=modelo4_parser.nome_colaborador,
+    referencia=modelo4_parser.referencia,
+    linhas_dia=modelo4_parser.linhas_dia,
+    map_registro=modelo4_mapper.map_registro,
+    manter_registro=modelo4_mapper.registro_tem_conteudo,
+    map_folha=modelo4_mapper.mapear_folha,
+)
+
 
 def _ext(nome: str) -> str:
     return Path(nome).suffix.lower()
@@ -108,6 +121,159 @@ def expandir_arquivos(
     return imagens, avisos
 
 
+async def _ocr_com_retry(
+    sessao: Any,
+    dados: bytes,
+    nome: str,
+    lote: str | None,
+) -> str:
+    """Executa o OCR com retentativas para falhas transitorias do provedor."""
+    total = config.TENTATIVAS_OCR
+    for tentativa in range(1, total + 1):
+        try:
+            return await mcp_client.ocr_imagem(sessao, dados)
+        except Exception as exc:  # noqa: BLE001
+            if tentativa >= total:
+                raise
+            espera = config.ESPERA_RETRY_OCR * tentativa
+            logs.warning(
+                "MCP PaddleOCR",
+                f"OCR de {nome} falhou (tentativa {tentativa}/{total}): "
+                f"{type(exc).__name__}: {exc}; nova tentativa em {espera:.0f}s",
+                lote,
+            )
+            await asyncio.sleep(espera)
+    raise AssertionError("fluxo de retentativa inesperado")
+
+
+@dataclass(frozen=True)
+class _ResultadoOCR:
+    markdown: str | None = None
+    erro: Exception | None = None
+    segundos: float = 0.0
+
+
+async def _ocr_uma(
+    sessao: Any,
+    semaforo: asyncio.Semaphore,
+    indice: int,
+    total: int,
+    nome: str,
+    dados: bytes,
+    lote: str | None,
+) -> _ResultadoOCR:
+    async with semaforo:
+        inicio = time.monotonic()
+        try:
+            markdown = await _ocr_com_retry(sessao, dados, nome, lote)
+        except Exception as exc:  # noqa: BLE001
+            duracao = time.monotonic() - inicio
+            detalhe = f"{type(exc).__name__}: {exc}"
+            log.warning("Falha no OCR de %s: %s", nome, detalhe)
+            logs.error(
+                "MCP PaddleOCR",
+                f"Falha no OCR da imagem {indice}/{total} ({nome}): {detalhe}",
+                lote,
+            )
+            return _ResultadoOCR(erro=exc, segundos=duracao)
+
+        duracao = time.monotonic() - inicio
+        logs.info(
+            "MCP PaddleOCR",
+            f"OCR {indice}/{total} concluido em {duracao:.2f}s: {nome}",
+            lote,
+        )
+        return _ResultadoOCR(markdown=markdown, segundos=duracao)
+
+
+async def _ocr_todas(
+    sessao: Any,
+    imagens: list[tuple[str, bytes]],
+    lote: str | None,
+) -> list[_ResultadoOCR]:
+    if not imagens:
+        return []
+
+    semaforo = asyncio.Semaphore(config.CONCORRENCIA_OCR)
+    total = len(imagens)
+    tarefas = [
+        asyncio.create_task(
+            _ocr_uma(sessao, semaforo, indice, total, nome, dados, lote)
+        )
+        for indice, (nome, dados) in enumerate(imagens, start=1)
+    ]
+    return list(await asyncio.gather(*tarefas))
+
+
+def _processar_markdown(
+    markdown: str,
+    nome: str,
+    dados: bytes,
+    indice: int,
+    total: int,
+    fluxo: _Fluxo,
+    lote: str | None,
+) -> tuple[FolhaProcessada | None, list[str]]:
+    grid = fluxo.selecionar_grid(markdown)
+    if not grid:
+        logs.warning(
+            "OCR",
+            f"Imagem {indice}/{total} sem folha reconhecida",
+            lote,
+        )
+        return None, [f'Nenhuma folha de ponto reconhecida em "{nome}".']
+
+    funcionario = fluxo.nome_colaborador(grid, markdown)
+    referencia = fluxo.referencia(grid, markdown)
+    linhas = fluxo.linhas_dia(grid)
+
+    registros = []
+    linhas_excel = []
+    if fluxo.map_folha is not None:
+        jornada = (
+            fluxo.jornada_prevista(grid, markdown)
+            if fluxo.jornada_prevista is not None
+            else None
+        )
+        registros, linhas_excel = fluxo.map_folha(
+            linhas, referencia, funcionario, jornada
+        )
+    else:
+        for i, linha in enumerate(linhas):
+            registro, linha_excel = fluxo.map_registro(
+                linha, i, referencia, funcionario
+            )
+            linhas_excel.append(linha_excel)
+            if fluxo.manter_registro(registro):
+                registros.append(registro)
+
+    if not registros and not fluxo.aceitar_sem_registros:
+        logs.warning(
+            "OCR",
+            f"Imagem {indice}/{total} sem horarios reconhecidos",
+            lote,
+        )
+        return None, [f'Nenhum horario reconhecido em "{nome}".']
+
+    stem = Path(nome).stem
+    origem_hash = hashlib.sha256(dados).hexdigest()
+    logs.info(
+        "OCR",
+        f"Imagem {indice}/{total} mapeada: {len(registros)} registro(s)",
+        lote,
+    )
+    folha = FolhaProcessada(
+        nome=funcionario or stem,
+        funcionario=funcionario,
+        referencia=referencia,
+        arquivo_origem=nome,
+        registros=registros,
+        linhas_excel=linhas_excel,
+        origem_hash=origem_hash,
+    )
+    return folha, []
+
+
 async def _processar_com(
     imagens: list[tuple[str, bytes]],
     lote: str | None,
@@ -118,90 +284,44 @@ async def _processar_com(
     if not imagens:
         return folhas, avisos
 
-    logs.info("OCR", f"Inicio do processamento de {len(imagens)} imagem(ns)", lote)
+    concorrencia = config.CONCORRENCIA_OCR
+    total = len(imagens)
+    logs.info(
+        "OCR",
+        f"Inicio do processamento de {total} imagem(ns), "
+        f"concorrencia={concorrencia}",
+        lote,
+    )
     inicio_lote = time.monotonic()
     async with mcp_client.abrir_mcp() as sessao:
-        for indice, (nome, dados) in enumerate(imagens, start=1):
-            stem = Path(nome).stem
-            origem_hash = hashlib.sha256(dados).hexdigest()
-            inicio = time.monotonic()
-            try:
-                markdown = await mcp_client.ocr_imagem(sessao, dados)
-            except Exception as exc:  # noqa: BLE001
-                log.warning("Falha no OCR de %s: %s", nome, exc)
-                logs.error(
-                    "MCP PaddleOCR",
-                    f"Falha no OCR da imagem {indice}/{len(imagens)}: {exc}",
-                    lote,
-                )
-                avisos.append(f'Falha ao ler "{nome}": {exc}')
-                continue
+        resultados = await _ocr_todas(sessao, imagens, lote)
 
-            grid = fluxo.selecionar_grid(markdown)
-            if not grid:
-                logs.warning(
-                    "OCR",
-                    f"Imagem {indice}/{len(imagens)} sem folha reconhecida",
-                    lote,
-                )
-                avisos.append(f'Nenhuma folha de ponto reconhecida em "{nome}".')
-                continue
+    for indice, ((nome, dados), resultado) in enumerate(
+        zip(imagens, resultados), start=1
+    ):
+        if resultado.erro is not None:
+            detalhe = f"{type(resultado.erro).__name__}: {resultado.erro}"
+            avisos.append(f'Falha ao ler "{nome}": {detalhe}')
+            continue
 
-            funcionario = fluxo.nome_colaborador(grid, markdown)
-            referencia = fluxo.referencia(grid, markdown)
-            linhas = fluxo.linhas_dia(grid)
-
-            registros = []
-            linhas_excel = []
-            if fluxo.map_folha is not None:
-                jornada = (
-                    fluxo.jornada_prevista(grid, markdown)
-                    if fluxo.jornada_prevista is not None
-                    else None
-                )
-                registros, linhas_excel = fluxo.map_folha(
-                    linhas, referencia, funcionario, jornada
-                )
-            else:
-                for i, linha in enumerate(linhas):
-                    registro, linha_excel = fluxo.map_registro(
-                        linha, i, referencia, funcionario
-                    )
-                    linhas_excel.append(linha_excel)
-                    if fluxo.manter_registro(registro):
-                        registros.append(registro)
-
-            if not registros and not fluxo.aceitar_sem_registros:
-                logs.warning(
-                    "OCR",
-                    f"Imagem {indice}/{len(imagens)} sem horarios reconhecidos",
-                    lote,
-                )
-                avisos.append(f'Nenhum horario reconhecido em "{nome}".')
-                continue
-
-            logs.info(
-                "OCR",
-                f"Imagem {indice}/{len(imagens)} concluida em "
-                f"{time.monotonic() - inicio:.2f}s: {len(registros)} registro(s)",
-                lote,
-            )
-            folhas.append(
-                FolhaProcessada(
-                    nome=funcionario or stem,
-                    funcionario=funcionario,
-                    referencia=referencia,
-                    arquivo_origem=nome,
-                    registros=registros,
-                    linhas_excel=linhas_excel,
-                    origem_hash=origem_hash,
-                )
-            )
+        folha, avisos_imagem = _processar_markdown(
+            resultado.markdown or "",
+            nome,
+            dados,
+            indice,
+            total,
+            fluxo,
+            lote,
+        )
+        avisos.extend(avisos_imagem)
+        if folha is not None:
+            folhas.append(folha)
 
     logs.info(
         "OCR",
-        f"Processamento concluido: {len(folhas)} folha(s) em "
-        f"{time.monotonic() - inicio_lote:.2f}s",
+        f"Processamento concluido: {len(folhas)} folha(s), "
+        f"{len(avisos)} aviso(s) em {time.monotonic() - inicio_lote:.2f}s, "
+        f"concorrencia={concorrencia}",
         lote,
     )
     return folhas, avisos
@@ -229,3 +349,11 @@ async def processar_folhas_modelo3(
 ) -> tuple[list[FolhaProcessada], list[str]]:
     """Executa o pipeline do cartao tradicional quinzenal (Modelo 3)."""
     return await _processar_com(imagens, lote, _FLUXO_MODELO3)
+
+
+async def processar_folhas_modelo4(
+    imagens: list[tuple[str, bytes]],
+    lote: str | None = None,
+) -> tuple[list[FolhaProcessada], list[str]]:
+    """Executa o pipeline do registro mensal com duas linhas por dia (Modelo 4)."""
+    return await _processar_com(imagens, lote, _FLUXO_MODELO4)

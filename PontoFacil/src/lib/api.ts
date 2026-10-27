@@ -17,7 +17,7 @@ export type Registro = {
   observacao?: string | null;
 };
 
-export type ModeloId = "modelo-1" | "modelo-2" | "modelo-3";
+export type ModeloId = "modelo-1" | "modelo-2" | "modelo-3" | "modelo-4";
 
 export type RegistroPonto = {
   id: number;

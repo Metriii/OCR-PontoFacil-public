@@ -138,6 +138,16 @@ def _hora(valor: str | None) -> str | None:
     return texto if _HORA_RE.match(texto) else None
 
 
+def _dia_de_data_pontos(valor: str | None) -> int | None:
+    """Extrai o dia tanto de ``1``/``27 - FERIADO`` quanto de ``2026-10-01``."""
+    texto = (valor or "").strip()
+    iso = _data_iso(texto)
+    if iso:
+        return int(iso[-2:])
+    dia = _dia_mes(texto)
+    return int(dia) if dia else None
+
+
 def _chave_unica(
     modelo: str,
     nome: str,
@@ -207,6 +217,7 @@ def inserir_folhas(
     folhas: list[FolhaProcessada],
     modelo: str,
     lote: str | None = None,
+    data_processado: str | None = None,
 ) -> dict[str, int]:
     """Persiste os registros de um lote em uma unica transacao.
 
@@ -217,7 +228,7 @@ def inserir_folhas(
     if modelo not in config.MODELOS_VALIDOS:
         raise ValueError(f"Modelo invalido: {modelo}")
 
-    data_processado = logs.agora().date().isoformat()
+    data_processado = data_processado or logs.agora().date().isoformat()
     linhas: list[tuple] = []
     ignorados = 0
     vazios = 0
@@ -285,6 +296,172 @@ def inserir_folhas(
         "ignorados": ignorados,
         "vazios": vazios,
     }
+
+
+def sincronizar_folhas(
+    folhas: list[FolhaProcessada],
+    modelo: str,
+    lote: str | None = None,
+    data_processado: str | None = None,
+) -> dict[str, int]:
+    """Insere ou atualiza registros de planilhas editadas.
+
+    A linha existente e localizada por modelo + nome normalizado + dia. O
+    ``UPDATE`` usa a chave primaria e altera apenas os horarios que mudaram e a
+    ``chave_unica``; ``data_processado`` e ``origem_hash`` de linhas existentes
+    sao preservados para nao quebrar o agrupamento do resumo por lote.
+    """
+    if modelo not in config.MODELOS_VALIDOS:
+        raise ValueError(f"Modelo invalido: {modelo}")
+
+    resultado = {
+        "inseridos": 0,
+        "atualizados": 0,
+        "inalterados": 0,
+        "vazios": 0,
+        "ignorados": 0,
+    }
+    if not folhas:
+        return resultado
+
+    hoje = logs.agora().date().isoformat()
+    conexao = _conectar()
+    avisos_duplicidade: set[tuple[int, str]] = set()
+    try:
+        with conexao:
+            indice: dict[tuple[int, str], list[dict]] = {}
+            for linha in conexao.execute(
+                f"SELECT {_CAMPOS}, chave_unica, origem_hash "
+                "FROM registros_ponto WHERE modelo = ?",
+                (modelo,),
+            ):
+                registro = dict(linha)
+                dia = _dia_de_data_pontos(registro["data_pontos"])
+                if dia is None:
+                    continue
+                chave_logica = (dia, _normalizar_nome(registro["nome_funcionario"]))
+                indice.setdefault(chave_logica, []).append(registro)
+
+            for folha in folhas:
+                data_lote = folha.data_processado or data_processado or hoje
+                for registro in folha.registros:
+                    if _sem_horarios(registro):
+                        resultado["vazios"] += 1
+                        continue
+
+                    linha = _registro_para_linha(
+                        registro, folha, modelo, data_lote
+                    )
+                    if linha is None:
+                        resultado["ignorados"] += 1
+                        continue
+
+                    valores, chave_nova = linha
+                    dia = _dia_de_data_pontos(valores[1])
+                    chave_logica = (dia, _normalizar_nome(valores[0]))
+                    candidatos = indice.setdefault(chave_logica, [])
+                    if not candidatos:
+                        cursor = conexao.execute(
+                            """
+                            INSERT INTO registros_ponto (
+                                nome_funcionario, data_pontos, entrada,
+                                saida_intervalo, volta_intervalo, saida_final,
+                                data_processado, modelo, chave_unica, origem_hash
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            valores,
+                        )
+                        resultado["inseridos"] += 1
+                        candidatos.append(
+                            {
+                                "id": cursor.lastrowid,
+                                "nome_funcionario": valores[0],
+                                "data_pontos": valores[1],
+                                "entrada": valores[2],
+                                "saida_intervalo": valores[3],
+                                "volta_intervalo": valores[4],
+                                "saida_final": valores[5],
+                                "data_processado": valores[6],
+                                "modelo": valores[7],
+                                "chave_unica": valores[8],
+                                "origem_hash": valores[9],
+                            }
+                        )
+                        continue
+
+                    selecionado = max(candidatos, key=lambda item: int(item["id"]))
+                    if len(candidatos) > 1 and chave_logica not in avisos_duplicidade:
+                        avisos_duplicidade.add(chave_logica)
+                        logs.warning(
+                            "SQLite",
+                            f"Mais de um registro no dia {selecionado['data_pontos']}; "
+                            f"atualizando o mais recente (id={selecionado['id']})",
+                            lote,
+                        )
+
+                    alvo = {
+                        "entrada": valores[2],
+                        "saida_intervalo": valores[3],
+                        "volta_intervalo": valores[4],
+                        "saida_final": valores[5],
+                    }
+                    diferencas = {
+                        coluna: valor
+                        for coluna, valor in alvo.items()
+                        if selecionado.get(coluna) != valor
+                    }
+                    if not diferencas:
+                        resultado["inalterados"] += 1
+                        continue
+
+                    chave_recalculada = _chave_unica(
+                        modelo,
+                        selecionado["nome_funcionario"],
+                        selecionado["data_pontos"],
+                        alvo["entrada"],
+                        alvo["saida_intervalo"],
+                        alvo["volta_intervalo"],
+                        alvo["saida_final"],
+                    )
+                    campos = [f"{coluna} = ?" for coluna in diferencas]
+                    parametros = list(diferencas.values()) + [chave_recalculada]
+                    campos.append("chave_unica = ?")
+                    parametros.extend([selecionado["id"], modelo])
+                    cursor = conexao.execute(
+                        f"UPDATE registros_ponto SET {', '.join(campos)} "
+                        "WHERE id = ? AND modelo = ?",
+                        parametros,
+                    )
+                    if not cursor.rowcount:
+                        resultado["ignorados"] += 1
+                        logs.warning(
+                            "SQLite",
+                            f"Registro id={selecionado['id']} nao encontrado "
+                            "durante a sincronizacao",
+                            lote,
+                        )
+                        continue
+
+                    selecionado.update(diferencas)
+                    selecionado["chave_unica"] = chave_recalculada
+                    resultado["atualizados"] += 1
+    except sqlite3.Error as exc:
+        logs.error("SQLite", f"Falha ao sincronizar planilha: {exc}", lote)
+        raise ErroBanco(f"Falha ao sincronizar os registros: {exc}") from exc
+    finally:
+        conexao.close()
+
+    logs.info(
+        "SQLite",
+        "Sincronizacao concluida: "
+        f"inseridos={resultado['inseridos']}, "
+        f"atualizados={resultado['atualizados']}, "
+        f"inalterados={resultado['inalterados']}, "
+        f"vazios={resultado['vazios']}, "
+        f"ignorados={resultado['ignorados']}",
+        lote,
+    )
+    return resultado
 
 
 def listar_registros(

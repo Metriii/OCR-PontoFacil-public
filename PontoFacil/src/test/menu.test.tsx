@@ -16,6 +16,7 @@ const ROTAS = [
   "/processamento/modelo-1",
   "/processamento/modelo-2",
   "/processamento/modelo-3",
+  "/processamento/modelo-4",
 ];
 
 function criarRouter() {
@@ -66,6 +67,10 @@ describe("Menu lateral", () => {
     expect(screen.getByRole("link", { name: "Modelo 3" })).toHaveAttribute(
       "href",
       "/processamento/modelo-3",
+    );
+    expect(screen.getByRole("link", { name: "Modelo 4" })).toHaveAttribute(
+      "href",
+      "/processamento/modelo-4",
     );
 
     fireEvent.click(screen.getByRole("link", { name: "Modelo 1" }));

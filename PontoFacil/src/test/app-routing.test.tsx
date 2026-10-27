@@ -17,6 +17,7 @@ describe("App routing", () => {
     "/processamento/modelo-1",
     "/processamento/modelo-2",
     "/processamento/modelo-3",
+    "/processamento/modelo-4",
   ];
 
   it.each(rotas)("casa a rota %s em uma página própria (não 404)", (path) => {

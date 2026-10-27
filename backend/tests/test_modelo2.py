@@ -151,6 +151,62 @@ class TestParserModelo2(unittest.TestCase):
         self.assertEqual(campos.dia, "1")
         self.assertEqual(campos.entrada, "08:07")
 
+    def test_dia_e_entrada_na_mesma_celula_com_semana(self) -> None:
+        campos = separar_linha(
+            ["1 - 08:07", "Ter", "13:17", "14:18", "17:08"]
+        )
+        assert campos is not None
+        self.assertEqual(
+            (
+                campos.entrada,
+                campos.saida_almoco,
+                campos.volta_almoco,
+                campos.saida,
+            ),
+            ("08:07", "13:17", "14:18", "17:08"),
+        )
+
+    def test_quatro_batidas_compactas_na_mesma_celula(self) -> None:
+        campos = separar_linha(
+            ["01", "Ter", "08.24 12.07 13.08 17.12", "", "", "", "", ""]
+        )
+        assert campos is not None
+        self.assertEqual(
+            (
+                campos.entrada,
+                campos.saida_almoco,
+                campos.volta_almoco,
+                campos.saida,
+            ),
+            ("08:24", "12:07", "13:08", "17:12"),
+        )
+
+    def test_celulas_vazias_preservam_duas_batidas_de_entrada_e_saida(self) -> None:
+        campos = separar_linha(["01", "Sab", "08:08", "--", "--", "14:00"])
+        assert campos is not None
+        self.assertEqual(
+            (
+                campos.entrada,
+                campos.saida_almoco,
+                campos.volta_almoco,
+                campos.saida,
+            ),
+            ("08:08", "", "", "14:00"),
+        )
+
+    def test_duas_batidas_compactas_viram_entrada_e_saida(self) -> None:
+        campos = separar_linha(["01", "Ter", "08:00 17:00", "", "", ""])
+        assert campos is not None
+        self.assertEqual(
+            (
+                campos.entrada,
+                campos.saida_almoco,
+                campos.volta_almoco,
+                campos.saida,
+            ),
+            ("08:00", "", "", "17:00"),
+        )
+
     def test_entrada_omitida_desloca_tres_batidas_para_direita(self) -> None:
         campos = separar_linha(
             ["01", "Ter", "13:30", "14:30", "17:20", "", "", "Cortesao"]
@@ -297,7 +353,7 @@ class TestMapperModelo2(unittest.TestCase):
     def test_dia_em_branco_nao_vira_registro(self) -> None:
         registro, linha_excel = _map(LINHAS[2])
         self.assertFalse(mapper.registro_tem_conteudo(registro))
-        self.assertEqual(linha_excel, ["05 - sábado", "", "", "", "", ""])
+        self.assertEqual(linha_excel, ["05 - sábado", "", "", "", "", "", ""])
 
     def test_dia_trabalhado_vira_registro(self) -> None:
         registro, _ = _map(LINHAS[0])
@@ -333,25 +389,57 @@ class TestMapperModelo2(unittest.TestCase):
         rotulo = f"01 - {DIAS_PT[date(2026, 9, 1).weekday()]}"
         self.assertEqual(
             linha_excel,
-            [rotulo, "08:00", "13:30", "14:30", "17:20", "08:20"],
+            [rotulo, "08:00", "13:30", "14:30", "17:20", "08:20", "Sim"],
         )
 
     def test_nao_aplica_regra_de_20h_do_modelo_1(self) -> None:
         registro, _ = _map(["04", "Sex", "20:30", "23:00", "23:30", "23:59"])
         self.assertEqual(registro.entrada, "20:30")
 
-    def test_linha_excel_tem_seis_colunas_e_hora_total(self) -> None:
+    def test_linha_excel_tem_sete_colunas_e_hora_total(self) -> None:
         _, linha_excel = _map(LINHAS[0])
-        self.assertEqual(len(linha_excel), 6)
+        self.assertEqual(len(linha_excel), 7)
         self.assertEqual(
             linha_excel,
-            ["01 - terça-feira", "08:07", "13:17", "14:18", "17:08", "08:00"],
+            ["01 - terça-feira", "08:07", "13:17", "14:18", "17:08", "08:00", ""],
         )
 
     def test_anotacao_aparece_no_rotulo_da_planilha(self) -> None:
         _, linha_excel = _map(LINHAS[4])
         self.assertEqual(linha_excel[0], "09 - quarta-feira (FALTA Justificado)")
-        self.assertEqual(linha_excel[1:], ["", "", "", "", ""])
+        self.assertEqual(linha_excel[1:], ["", "", "", "", "", ""])
+
+    def test_consolidado_modelo2_tem_coluna_revisar(self) -> None:
+        from openpyxl import load_workbook
+
+        from backend.excel import gerar_xlsx_consolidado
+        from backend.modelos import FolhaProcessada
+
+        registro, linha_excel = _map(
+            ["01", "Ter", "08:00", "12:00", "13:00", "", "", ""]
+        )
+        folha = FolhaProcessada(
+            nome="AMANDA",
+            funcionario="AMANDA RAFAELE LIMA DA SILVA",
+            referencia=REFERENCIA,
+            arquivo_origem="amanda.jpg",
+            registros=[registro],
+            linhas_excel=[linha_excel],
+        )
+        with tempfile.TemporaryDirectory() as pasta:
+            destino = Path(pasta) / "consolidado.xlsx"
+            gerar_xlsx_consolidado([folha], destino, modelo="modelo-2")
+            aba = load_workbook(destino).active
+            assert aba is not None
+            self.assertEqual(
+                [celula.value for celula in aba[1]][-1],
+                "Revisar",
+            )
+            self.assertEqual(
+                [celula.value for celula in aba[2]][-1],
+                "Sim",
+            )
+            self.assertEqual(len([celula.value for celula in aba[2]]), 7)
 
 
 class TestNormalizacaoModelo2(unittest.TestCase):

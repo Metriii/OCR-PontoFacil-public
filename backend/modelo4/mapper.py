@@ -1,0 +1,318 @@
+"""Mapeia o registro mensal (Modelo 4) para o contrato do frontend.
+
+O cartao tem duas linhas fisicas por data. A primeira linha corresponde a
+entrada e a saida para o intervalo; a segunda, a volta do intervalo e a saida
+final. O Excel mantem as mesmas seis colunas dos Modelos 1 e 3.
+"""
+
+from __future__ import annotations
+
+import re
+from datetime import date
+from collections.abc import Iterable
+
+from ..modelos import Registro
+from .parser import (
+    CamposLinha,
+    corrigir_datas_apos_feriado,
+    preencher_datas,
+    separar_linha,
+)
+
+_HORA_RE = re.compile(r"(\d{1,2})[:h.](\d{2})")
+_DATA_RE = re.compile(r"(\d{2})/(\d{2})/(\d{4})")
+
+LIMIAR_REVISAO = 0.7
+OBSERVACAO_JORNADA_LONGA = "Jornada acima de 10 horas; conferir a saída final."
+
+_DIAS_SEMANA = (
+    "segunda-feira",
+    "terça-feira",
+    "quarta-feira",
+    "quinta-feira",
+    "sexta-feira",
+    "sábado",
+    "domingo",
+)
+
+CABECALHO_EXCEL = [
+    "Dia da semana",
+    "Entrar",
+    "Saída para intervalo",
+    "Volta intervalo",
+    "Saída",
+    "Hora total",
+]
+
+
+def _minutos(valor: str | None) -> int | None:
+    if not valor:
+        return None
+    m = _HORA_RE.search(valor)
+    return int(m.group(1)) * 60 + int(m.group(2)) if m else None
+
+
+def _horarios_inconsistentes(
+    entrada: str | None,
+    saida_almoco: str | None,
+    volta_almoco: str | None,
+    saida: str | None,
+) -> bool:
+    pontos = [
+        _minutos(entrada),
+        _minutos(saida_almoco),
+        _minutos(volta_almoco),
+        _minutos(saida),
+    ]
+    presentes = [p for p in pontos if p is not None]
+    if len(presentes) < 2:
+        return False
+    return any(a >= b for a, b in zip(presentes, presentes[1:]))
+
+
+def _hora_total(
+    entrada: str | None,
+    saida_almoco: str | None,
+    volta_almoco: str | None,
+    saida: str | None,
+) -> str:
+    e = _minutos(entrada)
+    s1 = _minutos(saida_almoco)
+    v = _minutos(volta_almoco)
+    s2 = _minutos(saida)
+
+    total = 0
+    tem = False
+    if e is not None and s1 is not None:
+        total += s1 - e
+        tem = True
+    if v is not None and s2 is not None:
+        total += s2 - v
+        tem = True
+    if not tem and e is not None and s2 is not None:
+        total = s2 - e
+        tem = True
+    if not tem or total < 0:
+        return ""
+    return f"{total // 60:02d}:{total % 60:02d}"
+
+
+def _slug(texto: str | None) -> str:
+    base = re.sub(r"[^a-z0-9]+", "-", (texto or "folha").lower()).strip("-")
+    return base or "folha"
+
+
+def _dia_semana(campo: CamposLinha, referencia: str | None) -> str | None:
+    data = campo.data
+    if data is not None:
+        return _DIAS_SEMANA[data.weekday()]
+
+    m = _DATA_RE.search(referencia or "")
+    if not m or campo.dia is None:
+        return None
+    try:
+        data = date(int(m.group(3)), int(m.group(2)), campo.dia)
+    except ValueError:
+        return None
+    return _DIAS_SEMANA[data.weekday()]
+
+
+def _duas_batidas(horas: list[str]) -> list[str]:
+    """Posiciona duas batidas quando so uma linha fisica tem horarios."""
+    primeira = _minutos(horas[0])
+    segunda = _minutos(horas[1])
+    if primeira is None or segunda is None:
+        return [horas[0], horas[1], "", ""]
+
+    if primeira < 12 * 60 + 30 and segunda <= 14 * 60 + 30:
+        return [horas[0], horas[1], "", ""]
+    if primeira >= 12 * 60:
+        return ["", "", horas[0], horas[1]]
+    if primeira < 12 * 60 and segunda > 14 * 60:
+        return [horas[0], "", "", horas[1]]
+    return [horas[0], horas[1], "", ""]
+
+
+def _distribuir(campos: list[CamposLinha]) -> tuple[list[str], bool]:
+    """Distribui as batidas nas quatro colunas; devolve (horarios, extra)."""
+    com_horas = [campo for campo in campos if campo.horas]
+    extra = len(campos) > 2 or any(len(campo.horas) > 2 for campo in com_horas)
+
+    if not com_horas:
+        return ["", "", "", ""], extra
+
+    if len(com_horas) == 1:
+        horas = list(com_horas[0].horas)
+        if len(horas) >= 4:
+            return horas[:4], extra or len(horas) > 4
+        if len(horas) == 3:
+            return [horas[0], horas[1], horas[2], ""], True
+        if len(horas) == 2:
+            return _duas_batidas(horas), extra
+        minuto = _minutos(horas[0])
+        if minuto is None:
+            return ["", "", "", ""], True
+        if minuto < 12 * 60:
+            return [horas[0], "", "", ""], True
+        return ["", "", "", horas[0]], True
+
+    primeira = list(com_horas[0].horas[:2])
+    segunda = list(com_horas[1].horas[:2])
+    primeira += [""] * (2 - len(primeira))
+    segunda += [""] * (2 - len(segunda))
+    return [*primeira, *segunda], extra
+
+
+def _combinar_observacao(
+    anotacao: str | None, ajuste: str | None
+) -> str | None:
+    if not ajuste:
+        return anotacao or None
+    if not anotacao:
+        return ajuste
+    return f"{anotacao} {ajuste}"
+
+
+def _mapear_grupo(
+    campos: list[CamposLinha],
+    indice: int,
+    referencia: str | None,
+    funcionario: str | None,
+) -> tuple[Registro, list[str]]:
+    primeiro = campos[0]
+    dia = primeiro.dia
+    semana = _dia_semana(primeiro, referencia)
+
+    anotacoes = [campo.observacao for campo in campos if campo.observacao]
+    ajustes = [campo.ajuste for campo in campos if campo.ajuste]
+    anotacao = " ".join(dict.fromkeys(anotacoes)) or None
+    ajuste = " ".join(dict.fromkeys(ajustes)) or None
+
+    horarios, extra = _distribuir(campos)
+    entrada = horarios[0] or None
+    saida_almoco = horarios[1] or None
+    volta_almoco = horarios[2] or None
+    saida = horarios[3] or None
+    total = _hora_total(entrada, saida_almoco, volta_almoco, saida)
+
+    presentes = sum(
+        1 for hora in (entrada, saida_almoco, volta_almoco, saida) if hora
+    )
+    confianca = round(presentes / 4, 2)
+    inconsistente = _horarios_inconsistentes(
+        entrada, saida_almoco, volta_almoco, saida
+    )
+    if inconsistente:
+        confianca = min(confianca, LIMIAR_REVISAO)
+
+    forcar_revisao = any(campo.forcar_revisao for campo in campos)
+    if extra or forcar_revisao:
+        confianca = min(confianca, LIMIAR_REVISAO)
+
+    observacao = _combinar_observacao(anotacao, ajuste)
+    minutos_total = _minutos(total)
+    jornada_longa = minutos_total is not None and minutos_total > 10 * 60
+    if jornada_longa:
+        confianca = min(confianca, LIMIAR_REVISAO)
+        observacao = _combinar_observacao(observacao, OBSERVACAO_JORNADA_LONGA)
+
+    revisar = (
+        presentes < 4
+        or confianca < LIMIAR_REVISAO
+        or inconsistente
+        or extra
+        or forcar_revisao
+        or jornada_longa
+    )
+
+    dia_txt = f"{dia:02d}" if dia is not None else ""
+    rotulo = f"{dia_txt} - {semana}" if dia_txt and semana else dia_txt
+    if anotacao:
+        rotulo = f"{rotulo} ({anotacao})"
+
+    nome = funcionario or "folha"
+    ano_txt = f"{primeiro.ano:04d}" if primeiro.ano is not None else "0000"
+    mes_txt = f"{primeiro.mes:02d}" if primeiro.mes is not None else "00"
+    registro = Registro(
+        id=f"{_slug(nome)}-{ano_txt}{mes_txt}{dia_txt}-{indice}",
+        funcionario=funcionario,
+        data=str(dia) if dia is not None else None,
+        dia_semana=semana,
+        entrada=entrada,
+        saida_almoco=saida_almoco,
+        volta_almoco=volta_almoco,
+        saida=saida,
+        confianca=confianca,
+        revisar=revisar,
+        observacao=observacao,
+    )
+    linha_excel = [
+        rotulo,
+        entrada or "",
+        saida_almoco or "",
+        volta_almoco or "",
+        saida or "",
+        total,
+    ]
+    return registro, linha_excel
+
+
+def registro_tem_conteudo(registro: Registro) -> bool:
+    return any(
+        (
+            registro.entrada,
+            registro.saida_almoco,
+            registro.volta_almoco,
+            registro.saida,
+            registro.observacao,
+        )
+    )
+
+
+def _grupos(campos: Iterable[CamposLinha]) -> dict[tuple[int, int, int], list[CamposLinha]]:
+    grupos: dict[tuple[int, int, int], list[CamposLinha]] = {}
+    for campo in campos:
+        if campo.dia is None or campo.mes is None:
+            continue
+        chave = (campo.ano or 0, campo.mes, campo.dia)
+        grupos.setdefault(chave, []).append(campo)
+    return grupos
+
+
+def mapear_folha(
+    linhas: list[list[str]],
+    referencia: str | None,
+    funcionario: str | None,
+    _jornada: object | None = None,
+) -> tuple[list[Registro], list[list[str]]]:
+    """Agrupa as duas linhas de cada data e devolve registros + Excel."""
+    campos = [
+        campo
+        for linha in linhas
+        if (campo := separar_linha(linha)) is not None
+    ]
+    campos = preencher_datas(campos)
+    campos = corrigir_datas_apos_feriado(campos)
+
+    registros: list[Registro] = []
+    linhas_excel: list[list[str]] = []
+    for indice, grupo in enumerate(_grupos(campos).values()):
+        registro, linha_excel = _mapear_grupo(
+            grupo, indice, referencia, funcionario
+        )
+        linhas_excel.append(linha_excel)
+        if registro_tem_conteudo(registro):
+            registros.append(registro)
+    return registros, linhas_excel
+
+
+def map_registro(
+    linha: list[str],
+    indice: int,
+    referencia: str | None,
+    funcionario: str | None,
+) -> tuple[Registro, list[str]]:
+    campos = separar_linha(linha)
+    if campos is None:
+        campos = CamposLinha(dia=None, mes=None, ano=None, horas=())
+    return _mapear_grupo([campos], indice, referencia, funcionario)

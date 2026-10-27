@@ -7,6 +7,9 @@ openpyxl>=3.1.0
 # Ampliacao de fotos pequenas antes do OCR
 Pillow>=10.0.0
 
+# Monitoramento das planilhas Excel editadas (sincronizacao automatica)
+watchdog>=3.0.0
+
 # Type stubs do openpyxl (usados pelo type checker Pyrefly do editor)
 types-openpyxl>=3.1.5
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import re
+import threading
 import unicodedata
 import uuid
 
@@ -15,6 +16,7 @@ from ..modelos import Planilha, Registro, ResultadoProcessamento
 router = APIRouter(tags=["processamento"])
 
 _INVALIDOS = re.compile(r"[\\/?*\[\]:\"<>|]+")
+_LOCK_PROCESSAMENTO = threading.Lock()
 
 
 def _nome_seguro(nome: str, sufixo: str = ".xlsx") -> str:
@@ -34,8 +36,107 @@ def _slug_ascii(nome: str) -> str:
 def _armazenar(conteudo: bytes, nome_amigavel: str) -> str:
     """Salva em DIR_SAIDA com nome unico e devolve o nome armazenado (p/ URL)."""
     nome_armazenado = f"{uuid.uuid4().hex[:10]}_{_slug_ascii(nome_amigavel)}"
-    (config.DIR_SAIDA / nome_armazenado).write_bytes(conteudo)
+    caminho = config.DIR_SAIDA / nome_armazenado
+    caminho.write_bytes(conteudo)
+    excel.marcar_gerado(caminho)
     return nome_armazenado
+
+
+async def _executar_processamento(
+    imagens: list[tuple[str, bytes]],
+    modelo: str,
+    lote: str,
+) -> ResultadoProcessamento:
+    if modelo == "modelo-2":
+        folhas, avisos_ocr = await servico.processar_folhas_modelo2(
+            imagens, lote=lote
+        )
+    elif modelo == "modelo-3":
+        folhas, avisos_ocr = await servico.processar_folhas_modelo3(
+            imagens, lote=lote
+        )
+    elif modelo == "modelo-4":
+        folhas, avisos_ocr = await servico.processar_folhas_modelo4(
+            imagens, lote=lote
+        )
+    else:
+        folhas, avisos_ocr = await servico.processar_folhas(imagens, lote=lote)
+
+    registros: list[Registro] = [
+        registro for folha in folhas for registro in folha.registros
+    ]
+    logs.info(
+        "API",
+        f"OCR concluido: {len(folhas)} folha(s), {len(registros)} registro(s), "
+        f"{len(avisos_ocr)} falha(s)/aviso(s)",
+        lote,
+    )
+
+    consolidado = None
+    if folhas:
+        data_processado = logs.agora().date().isoformat()
+        try:
+            persistencia = banco.inserir_folhas(
+                folhas,
+                modelo=modelo,
+                lote=lote,
+                data_processado=data_processado,
+            )
+        except banco.ErroBanco as exc:
+            logs.error(
+                "API",
+                f"Lote nao concluido: falha ao persistir registros: {exc}",
+                lote,
+            )
+            raise HTTPException(
+                status_code=500,
+                detail="Nao foi possivel salvar os registros no banco de dados.",
+            ) from exc
+
+        logs.info(
+            "API",
+            f"Persistencia do lote: inseridos={persistencia['inseridos']}, "
+            f"duplicados={persistencia['duplicados']}, "
+            f"ignorados={persistencia['ignorados']}, "
+            f"vazios={persistencia['vazios']}",
+            lote,
+        )
+
+        nome_consolidado = _nome_seguro("consolidado")
+        try:
+            buffer = io.BytesIO()
+            excel.gerar_xlsx_consolidado(
+                folhas,
+                buffer,
+                modelo=modelo,
+                lote=lote,
+                data_processado=data_processado,
+            )
+            nome_armazenado = _armazenar(buffer.getvalue(), nome_consolidado)
+        except Exception as exc:  # noqa: BLE001
+            logs.error("API", f"Lote nao concluido: falha ao gerar Excel: {exc}", lote)
+            raise HTTPException(
+                status_code=500,
+                detail="Nao foi possivel gerar a planilha Excel.",
+            ) from exc
+
+        excel.limpar_planilhas_individuais(config.DIR_SAIDA)
+        consolidado = Planilha(
+            arquivo=nome_consolidado,
+            status="ok",
+            url=f"/download/{nome_armazenado}",
+        )
+    else:
+        logs.warning("API", "Nenhuma folha processada; nada a persistir", lote)
+
+    logs.info("API", "Lote concluido com sucesso", lote)
+    return ResultadoProcessamento(
+        total_cartoes=len(imagens),
+        processados=len(folhas),
+        registros=registros,
+        planilhas=[],
+        consolidado=consolidado,
+    )
 
 
 @router.post("/processar", response_model=ResultadoProcessamento)
@@ -87,77 +188,17 @@ async def processar(
             detail="Nenhum arquivo valido (jpg, jpeg, jfif, jpe, png, webp, pdf ou zip) foi enviado.",
         )
 
-    if modelo == "modelo-2":
-        folhas, avisos_ocr = await servico.processar_folhas_modelo2(
-            imagens, lote=lote
-        )
-    elif modelo == "modelo-3":
-        folhas, avisos_ocr = await servico.processar_folhas_modelo3(
-            imagens, lote=lote
-        )
-    else:
-        folhas, avisos_ocr = await servico.processar_folhas(imagens, lote=lote)
-
-    registros: list[Registro] = [
-        registro for folha in folhas for registro in folha.registros
-    ]
-    logs.info(
-        "API",
-        f"OCR concluido: {len(folhas)} folha(s), {len(registros)} registro(s), "
-        f"{len(avisos_ocr)} falha(s)/aviso(s)",
-        lote,
-    )
-
-    consolidado = None
-    if folhas:
-        try:
-            persistencia = banco.inserir_folhas(folhas, modelo=modelo, lote=lote)
-        except banco.ErroBanco as exc:
-            logs.error(
-                "API",
-                f"Lote nao concluido: falha ao persistir registros: {exc}",
-                lote,
-            )
-            raise HTTPException(
-                status_code=500,
-                detail="Nao foi possivel salvar os registros no banco de dados.",
-            ) from exc
-
-        logs.info(
+    if not _LOCK_PROCESSAMENTO.acquire(blocking=False):
+        logs.warning(
             "API",
-            f"Persistencia do lote: inseridos={persistencia['inseridos']}, "
-            f"duplicados={persistencia['duplicados']}, "
-            f"ignorados={persistencia['ignorados']}, "
-            f"vazios={persistencia['vazios']}",
+            "Lote rejeitado: ja existe um processamento em andamento",
             lote,
         )
-
-        nome_consolidado = _nome_seguro("consolidado")
-        try:
-            buffer = io.BytesIO()
-            excel.gerar_xlsx_consolidado(folhas, buffer, modelo=modelo)
-            nome_armazenado = _armazenar(buffer.getvalue(), nome_consolidado)
-        except Exception as exc:  # noqa: BLE001
-            logs.error("API", f"Lote nao concluido: falha ao gerar Excel: {exc}", lote)
-            raise HTTPException(
-                status_code=500,
-                detail="Nao foi possivel gerar a planilha Excel.",
-            ) from exc
-
-        excel.limpar_planilhas_individuais(config.DIR_SAIDA)
-        consolidado = Planilha(
-            arquivo=nome_consolidado,
-            status="ok",
-            url=f"/download/{nome_armazenado}",
+        raise HTTPException(
+            status_code=409,
+            detail="Ja existe um processamento em andamento. Aguarde terminar.",
         )
-    else:
-        logs.warning("API", "Nenhuma folha processada; nada a persistir", lote)
-
-    logs.info("API", "Lote concluido com sucesso", lote)
-    return ResultadoProcessamento(
-        total_cartoes=len(imagens),
-        processados=len(folhas),
-        registros=registros,
-        planilhas=[],
-        consolidado=consolidado,
-    )
+    try:
+        return await _executar_processamento(imagens, modelo, lote)
+    finally:
+        _LOCK_PROCESSAMENTO.release()

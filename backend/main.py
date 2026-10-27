@@ -18,7 +18,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import banco, config, excel, logs
+from . import banco, config, excel, logs, sincronizacao_excel
 from .rotas import download, processar, registros
 
 logging.basicConfig(level=logging.INFO)
@@ -47,10 +47,16 @@ def _startup() -> None:
     config.garantir_diretorios()
     banco.inicializar()
     excel.limpar_planilhas_individuais(config.DIR_SAIDA)
+    sincronizacao_excel.iniciar()
     logs.info(
         "Startup",
         f"Aplicacao iniciada; banco={banco.caminho_banco()} logs={config.DIR_LOGS}",
     )
+
+
+@app.on_event("shutdown")
+def _shutdown() -> None:
+    sincronizacao_excel.parar()
 
 
 @app.get("/health")

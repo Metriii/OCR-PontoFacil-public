@@ -112,7 +112,8 @@ PontoFacil/src/
 │   └── processamento/
 │       ├── modelo-1.tsx      # tela original (upload, revisão, planilhas)
 │       ├── modelo-2.tsx      # folha diária (Modelo 2)
-│       └── modelo-3.tsx      # cartão tradicional (Modelo 3)
+│       ├── modelo-3.tsx      # cartão tradicional (Modelo 3)
+│       └── modelo-4.tsx      # registro mensal (Modelo 4)
 ├── components/
 │   ├── ponto/                # AppHeader, HistoryPanel, ModelCards (Central)
 │   └── ui/                   # componentes shadcn
@@ -292,9 +293,9 @@ Variáveis de ambiente:
 
 ## 10. Persistência SQLite e logs
 
-- `POST /processar` recebe o campo `modelo` (`modelo-1`, `modelo-2` ou
-  `modelo-3`; padrão `modelo-1`) e persiste os registros extraídos antes de
-  gerar o Excel.
+- `POST /processar` recebe o campo `modelo` (`modelo-1`, `modelo-2`,
+  `modelo-3` ou `modelo-4`; padrão `modelo-1`) e persiste os registros
+  extraídos antes de gerar o Excel.
 - `GET /registros` consulta o histórico real, com filtros opcionais por
   funcionário, data e modelo.
 - O banco fica em `data/pontofacil.db`; os logs em `logs/YYYY-MM-DD.txt`.

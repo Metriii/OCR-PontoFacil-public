@@ -64,7 +64,14 @@ class TestImportarExcel(unittest.TestCase):
 
         self.assertEqual(
             resultado,
-            {"inseridos": 2, "duplicados": 0, "ignorados": 0, "vazios": 1},
+            {
+                "lidos": 3,
+                "inseridos": 2,
+                "atualizados": 0,
+                "inalterados": 0,
+                "vazios": 1,
+                "invalidos": 1,
+            },
         )
         registros = banco.listar_registros()
         self.assertEqual(len(registros), 2)
@@ -89,7 +96,14 @@ class TestImportarExcel(unittest.TestCase):
 
         self.assertEqual(
             resultado,
-            {"inseridos": 0, "duplicados": 2, "ignorados": 0, "vazios": 1},
+            {
+                "lidos": 3,
+                "inseridos": 0,
+                "atualizados": 0,
+                "inalterados": 2,
+                "vazios": 1,
+                "invalidos": 1,
+            },
         )
         self.assertEqual(len(banco.listar_registros()), 2)
 

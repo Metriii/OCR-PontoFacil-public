@@ -408,6 +408,7 @@ class TestEndpointModelo3(unittest.TestCase):
                 patch.object(config, "DIR_DADOS", raiz / "data"),
                 patch.object(config, "ARQUIVO_BANCO", banco),
                 patch.object(config, "DIR_LOGS", raiz / "logs"),
+                patch.object(config, "SYNC_EXCEL_ATIVO", False),
             ):
                 with TestClient(app) as cliente:
                     resposta = cliente.post(

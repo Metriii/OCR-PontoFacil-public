@@ -378,8 +378,8 @@ Recomendações de backend:
 ## 12. Persistência e histórico (implementado)
 
 - **`POST /processar`** aceita o campo multipart `modelo` (`modelo-1` padrão,
-  `modelo-2` ou `modelo-3`). Os registros são gravados no SQLite antes da
-  geração do Excel.
+  `modelo-2`, `modelo-3` ou `modelo-4`). Os registros são gravados no SQLite
+  antes da geração do Excel.
 - **Banco:** `data/pontofacil.db`, tabela `registros_ponto`, com WAL,
   transação por lote e deduplicação por `chave_unica`.
 - **`GET /registros`** retorna o histórico com filtros opcionais

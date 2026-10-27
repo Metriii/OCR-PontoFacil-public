@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import m1 from "@/assets/modelo1.jpg";
 import m2 from "@/assets/modelo2.jpg";
 import m3 from "@/assets/modelo3.jpg";
+import m4 from "@/assets/modelo4.jpg";
 
 const MODELS = [
   {
@@ -22,7 +23,22 @@ const MODELS = [
     ready: true,
     to: "/processamento/modelo-2",
   },
-  { id: "modelo-3", name: "Modelo 3", desc: "Cartão tradicional", img: m3, ready: true, to: "/processamento/modelo-3" },
+  {
+    id: "modelo-3",
+    name: "Modelo 3",
+    desc: "Cartão tradicional",
+    img: m3,
+    ready: true,
+    to: "/processamento/modelo-3",
+  },
+  {
+    id: "modelo-4",
+    name: "Modelo 4",
+    desc: "Registro mensal",
+    img: m4,
+    ready: true,
+    to: "/processamento/modelo-4",
+  },
 ] as const;
 
 export function ModelCards() {

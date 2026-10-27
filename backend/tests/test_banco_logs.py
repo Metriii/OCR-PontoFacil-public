@@ -83,6 +83,7 @@ class BaseTemporaria(unittest.TestCase):
             patch.object(config, "ARQUIVO_BANCO", raiz / "data" / "teste.db"),
             patch.object(config, "DIR_LOGS", raiz / "logs"),
             patch.object(config, "DIR_SAIDA", raiz / "out"),
+            patch.object(config, "SYNC_EXCEL_ATIVO", False),
         ]
         for p in self.patches:
             p.start()

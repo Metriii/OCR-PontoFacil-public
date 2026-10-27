@@ -161,6 +161,25 @@ def _hora(valor: str) -> str | None:
     return f"{h:02d}:{mi:02d}"
 
 
+def _horas(valor: str) -> list[str]:
+    """Extrai todas as batidas de uma celula, mantendo a ordem do OCR."""
+    texto = _corrigir_prefixo_20(valor or "")
+    horas: list[str] = []
+    for parte in re.split(r"[\s,;]+", texto):
+        if not parte:
+            continue
+        hora = _hora(parte)
+        if hora is not None:
+            horas.append(hora)
+            continue
+        horas.extend(
+            f"{int(m.group(1)):02d}:{m.group(2)}"
+            for m in _HORA_RE.finditer(parte)
+            if 0 <= int(m.group(1)) < 24 and 0 <= int(m.group(2)) < 60
+        )
+    return horas
+
+
 def _minutos_hora(valor: str) -> int | None:
     if not valor:
         return None
@@ -169,6 +188,30 @@ def _minutos_hora(valor: str) -> int | None:
         return int(h) * 60 + int(mi)
     except (TypeError, ValueError):
         return None
+
+
+def _slots_horarios(linha: list[str], indices: list[int]) -> list[str]:
+    """Expande celulas compactas sem perder colunas vazias do layout."""
+    slots: list[str] = []
+    for indice in indices:
+        horarios = _horas(_celula(linha, indice))
+        if horarios:
+            slots.extend(horarios)
+        else:
+            slots.append("")
+    return (slots + [""] * 4)[:4]
+
+
+def _alinhar_duas_batidas(horas: list[str]) -> list[str]:
+    """Trata duas batidas compactas como entrada e saida do dia."""
+    preenchidas = [indice for indice, hora in enumerate(horas) if hora]
+    if preenchidas != [0, 1]:
+        return horas
+    entrada = _minutos_hora(horas[0])
+    saida = _minutos_hora(horas[1])
+    if entrada is None or saida is None or saida - entrada < 180:
+        return horas
+    return [horas[0], "", "", horas[1]]
 
 
 def _reposicionar_entrada_ausente(horas: list[str]) -> list[str]:
@@ -243,26 +286,21 @@ def separar_linha(linha: list[str]) -> CamposLinha | None:
 
     segunda = _celula(linha, 1)
     semana = _semana(segunda) or _semana_embutida(primeira)
-    h0 = _hora(primeira)
-    h1 = _hora(segunda)
+    tem_hora_na_primeira = bool(_horas(primeira))
+    tem_hora_na_segunda = bool(_horas(segunda))
 
-    if h0 is not None:
-        if h1 is not None:
-            base = [primeira, segunda, _celula(linha, 2), _celula(linha, 3)]
+    if tem_hora_na_primeira:
+        if tem_hora_na_segunda or not segunda.strip():
+            indices = [0, 1, 2, 3]
         else:
-            base = [primeira, _celula(linha, 2), _celula(linha, 3), _celula(linha, 4)]
-    elif h1 is not None:
-        base = [segunda, _celula(linha, 2), _celula(linha, 3), _celula(linha, 4)]
+            indices = [0, 2, 3, 4]
+    elif tem_hora_na_segunda:
+        indices = [1, 2, 3, 4]
     else:
-        base = [
-            _celula(linha, 2),
-            _celula(linha, 3),
-            _celula(linha, 4),
-            _celula(linha, 5),
-        ]
+        indices = [2, 3, 4, 5]
 
-    horas = _reposicionar_entrada_ausente(
-        [_hora(valor) or "" for valor in base]
+    horas = _alinhar_duas_batidas(
+        _reposicionar_entrada_ausente(_slots_horarios(linha, indices))
     )
     return CamposLinha(
         dia=dia,
