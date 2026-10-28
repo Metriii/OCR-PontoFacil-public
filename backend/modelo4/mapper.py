@@ -1,8 +1,15 @@
-"""Mapeia o registro mensal (Modelo 4) para o contrato do frontend.
+"""Mapeia o registro de ponto (Modelo 4) para o contrato do frontend.
 
-O cartao tem duas linhas fisicas por data. A primeira linha corresponde a
-entrada e a saida para o intervalo; a segunda, a volta do intervalo e a saida
-final. O Excel mantem as mesmas seis colunas dos Modelos 1 e 3.
+Dois layouts sao aceitos (ver ``parser``):
+
+``duas-linhas``
+    Duas linhas fisicas por data: a primeira com a entrada e a saida para o
+    intervalo; a segunda com a volta do intervalo e a saida final.
+
+``linha-unica``
+    Uma linha por dia com as quatro batidas na mesma linha (cartao quinzenal).
+
+O Excel mantem as mesmas seis colunas dos Modelos 1 e 3.
 """
 
 from __future__ import annotations
@@ -13,6 +20,9 @@ from collections.abc import Iterable
 
 from ..modelos import Registro
 from .parser import (
+    LAYOUT_DUAS_LINHAS,
+    LAYOUT_LINHA_UNICA,
+    LIMITE_VIRADA_MINUTOS,
     CamposLinha,
     corrigir_datas_apos_feriado,
     preencher_datas,
@@ -24,6 +34,10 @@ _DATA_RE = re.compile(r"(\d{2})/(\d{2})/(\d{4})")
 
 LIMIAR_REVISAO = 0.7
 OBSERVACAO_JORNADA_LONGA = "Jornada acima de 10 horas; conferir a saída final."
+OBSERVACAO_MEIA_NOITE = "Saída após a meia-noite; conferir o registro original."
+OBSERVACAO_DATA_INCOMPLETA = (
+    "Mês/ano não identificados no cabeçalho; conferir a data."
+)
 
 _DIAS_SEMANA = (
     "segunda-feira",
@@ -52,22 +66,46 @@ def _minutos(valor: str | None) -> int | None:
     return int(m.group(1)) * 60 + int(m.group(2)) if m else None
 
 
+def _bloco(inicio: str | None, fim: str | None) -> int | None:
+    """Duracao de um bloco de trabalho, aceitando virada de meia-noite."""
+    a, b = _minutos(inicio), _minutos(fim)
+    if a is None or b is None:
+        return None
+    duracao = b - a
+    if duracao > 0:
+        return duracao
+    if duracao == 0:
+        return None
+    duracao += 24 * 60
+    return duracao if duracao <= LIMITE_VIRADA_MINUTOS else None
+
+
+def _virou_meia_noite(volta_almoco: str | None, saida: str | None) -> bool:
+    v, s = _minutos(volta_almoco), _minutos(saida)
+    if v is None or s is None:
+        return False
+    return s <= v and _bloco(volta_almoco, saida) is not None
+
+
 def _horarios_inconsistentes(
     entrada: str | None,
     saida_almoco: str | None,
     volta_almoco: str | None,
     saida: str | None,
 ) -> bool:
-    pontos = [
-        _minutos(entrada),
-        _minutos(saida_almoco),
-        _minutos(volta_almoco),
-        _minutos(saida),
-    ]
-    presentes = [p for p in pontos if p is not None]
-    if len(presentes) < 2:
-        return False
-    return any(a >= b for a, b in zip(presentes, presentes[1:]))
+    valores = (entrada, saida_almoco, volta_almoco, saida)
+    pontos = [_minutos(valor) for valor in valores]
+    for indice in range(3):
+        atual, seguinte = pontos[indice], pontos[indice + 1]
+        if atual is None or seguinte is None:
+            continue
+        if seguinte > atual:
+            continue
+        # A virada de meia-noite so e valida no ultimo par (volta -> saida).
+        if indice == 2 and _bloco(valores[2], valores[3]) is not None:
+            continue
+        return True
+    return False
 
 
 def _hora_total(
@@ -76,23 +114,20 @@ def _hora_total(
     volta_almoco: str | None,
     saida: str | None,
 ) -> str:
-    e = _minutos(entrada)
-    s1 = _minutos(saida_almoco)
-    v = _minutos(volta_almoco)
-    s2 = _minutos(saida)
+    blocos: list[int] = []
+    primeiro = _bloco(entrada, saida_almoco)
+    if primeiro is not None:
+        blocos.append(primeiro)
+    segundo = _bloco(volta_almoco, saida)
+    if segundo is not None:
+        blocos.append(segundo)
+    if not blocos:
+        unico = _bloco(entrada, saida)
+        if unico is not None:
+            blocos.append(unico)
 
-    total = 0
-    tem = False
-    if e is not None and s1 is not None:
-        total += s1 - e
-        tem = True
-    if v is not None and s2 is not None:
-        total += s2 - v
-        tem = True
-    if not tem and e is not None and s2 is not None:
-        total = s2 - e
-        tem = True
-    if not tem or total < 0:
+    total = sum(blocos)
+    if total <= 0:
         return ""
     return f"{total // 60:02d}:{total % 60:02d}"
 
@@ -117,6 +152,17 @@ def _dia_semana(campo: CamposLinha, referencia: str | None) -> str | None:
     return _DIAS_SEMANA[data.weekday()]
 
 
+def _periodo_referencia(referencia: str | None) -> tuple[int | None, int | None]:
+    """Mes e ano do inicio do periodo, usados nas linhas sem data completa."""
+    m = _DATA_RE.search(referencia or "")
+    if not m:
+        return None, None
+    mes, ano = int(m.group(2)), int(m.group(3))
+    if not 1 <= mes <= 12:
+        return None, None
+    return mes, ano
+
+
 def _duas_batidas(horas: list[str]) -> list[str]:
     """Posiciona duas batidas quando so uma linha fisica tem horarios."""
     primeira = _minutos(horas[0])
@@ -133,13 +179,59 @@ def _duas_batidas(horas: list[str]) -> list[str]:
     return [horas[0], horas[1], "", ""]
 
 
+def _distribuir_por_coluna(
+    campos: list[CamposLinha],
+) -> tuple[list[str], bool] | None:
+    """Preenche as quatro colunas pela posicao lida no cartao.
+
+    No layout de linha unica cada celula tem uma coluna fixa (entrada, saida
+    do intervalo, volta e saida). Uma celula vazia continua vazia: a saida
+    final nao escorrega para a coluna do intervalo. Devolve ``None`` quando a
+    linha nao trouxe posicoes confiaveis (aí o mapper usa a heuristica antiga).
+    """
+    com_horas = [campo for campo in campos if campo.horas]
+    if not com_horas:
+        return ["", "", "", ""], False
+    if any(len(campo.posicoes) != len(campo.horas) for campo in com_horas):
+        return None
+
+    colunas = ["", "", "", ""]
+    extra = False
+    cursor = 0
+    for campo in com_horas:
+        for hora, posicao in zip(campo.horas, campo.posicoes):
+            # Celula lida duas vezes pelo OCR: a batida ja esta registrada.
+            if hora in colunas:
+                continue
+            alvo = max(cursor, min(max(posicao, 1), 4) - 1)
+            while alvo < 4 and colunas[alvo]:
+                alvo += 1
+            if alvo >= 4:
+                extra = True
+                continue
+            colunas[alvo] = hora
+            cursor = alvo + 1
+    return colunas, extra
+
+
 def _distribuir(campos: list[CamposLinha]) -> tuple[list[str], bool]:
     """Distribui as batidas nas quatro colunas; devolve (horarios, extra)."""
     com_horas = [campo for campo in campos if campo.horas]
-    extra = len(campos) > 2 or any(len(campo.horas) > 2 for campo in com_horas)
+    layout = campos[0].layout if campos else LAYOUT_DUAS_LINHAS
+    # No layout de linha unica, quatro batidas em uma unica linha e o normal.
+    extra = len(campos) > 2 or (
+        layout != LAYOUT_LINHA_UNICA
+        and any(len(campo.horas) > 2 for campo in com_horas)
+    )
 
     if not com_horas:
         return ["", "", "", ""], extra
+
+    if layout == LAYOUT_LINHA_UNICA:
+        por_coluna = _distribuir_por_coluna(campos)
+        if por_coluna is not None:
+            horarios, conflito = por_coluna
+            return horarios, extra or conflito
 
     if len(com_horas) == 1:
         horas = list(com_horas[0].horas)
@@ -216,6 +308,18 @@ def _mapear_grupo(
         confianca = min(confianca, LIMIAR_REVISAO)
         observacao = _combinar_observacao(observacao, OBSERVACAO_JORNADA_LONGA)
 
+    meia_noite = _virou_meia_noite(volta_almoco, saida)
+    if meia_noite:
+        confianca = min(confianca, LIMIAR_REVISAO)
+        observacao = _combinar_observacao(observacao, OBSERVACAO_MEIA_NOITE)
+
+    # Sem mes/ano do cabecalho o registro continua valido (o dia e a jornada
+    # foram lidos); a data completa e que fica pendente de conferencia.
+    data_incompleta = primeiro.mes is None or primeiro.ano is None
+    if data_incompleta:
+        confianca = min(confianca, LIMIAR_REVISAO)
+        observacao = _combinar_observacao(observacao, OBSERVACAO_DATA_INCOMPLETA)
+
     revisar = (
         presentes < 4
         or confianca < LIMIAR_REVISAO
@@ -223,6 +327,8 @@ def _mapear_grupo(
         or extra
         or forcar_revisao
         or jornada_longa
+        or meia_noite
+        or data_incompleta
     )
 
     dia_txt = f"{dia:02d}" if dia is not None else ""
@@ -269,12 +375,42 @@ def registro_tem_conteudo(registro: Registro) -> bool:
     )
 
 
+def _faixa_de_dias(
+    referencia: str | None, dias: Iterable[int]
+) -> tuple[int, int]:
+    """Primeiro e ultimo dia que a planilha do cartao quinzenal deve listar."""
+    datas = _DATA_RE.findall(referencia or "")
+    if datas:
+        primeiro = int(datas[0][0])
+        ultimo = int(datas[-1][0])
+        if 1 <= primeiro <= ultimo <= 31:
+            return primeiro, ultimo
+    # Sem periodo legivel: a quinzena e deduzida pelos dias encontrados.
+    if any(dia > 15 for dia in dias):
+        return 16, 30
+    return 1, 15
+
+
+def _rotulo_dia_vazio(dia: int, referencia: str | None) -> str:
+    """Rotulo de um dia sem batidas; com dia da semana quando a data e conhecida."""
+    m = _DATA_RE.search(referencia or "")
+    if m and 1 <= dia <= 31:
+        try:
+            data = date(int(m.group(3)), int(m.group(2)), dia)
+        except ValueError:
+            return f"{dia:02d}"
+        return f"{dia:02d} - {_DIAS_SEMANA[data.weekday()]}"
+    return f"{dia:02d}"
+
+
 def _grupos(campos: Iterable[CamposLinha]) -> dict[tuple[int, int, int], list[CamposLinha]]:
     grupos: dict[tuple[int, int, int], list[CamposLinha]] = {}
     for campo in campos:
-        if campo.dia is None or campo.mes is None:
+        # Dia sem mes/ano ainda vale: o cartao nao pode ser descartado inteiro
+        # so porque o cabecalho manuscrito nao foi lido.
+        if campo.dia is None:
             continue
-        chave = (campo.ano or 0, campo.mes, campo.dia)
+        chave = (campo.ano or 0, campo.mes or 0, campo.dia)
         grupos.setdefault(chave, []).append(campo)
     return grupos
 
@@ -285,24 +421,52 @@ def mapear_folha(
     funcionario: str | None,
     _jornada: object | None = None,
 ) -> tuple[list[Registro], list[list[str]]]:
-    """Agrupa as duas linhas de cada data e devolve registros + Excel."""
+    """Agrupa as linhas de cada data e devolve registros + Excel."""
+    mes, ano = _periodo_referencia(referencia)
     campos = [
         campo
         for linha in linhas
-        if (campo := separar_linha(linha)) is not None
+        if (campo := separar_linha(linha, mes=mes, ano=ano)) is not None
     ]
     campos = preencher_datas(campos)
     campos = corrigir_datas_apos_feriado(campos)
 
     registros: list[Registro] = []
     linhas_excel: list[list[str]] = []
-    for indice, grupo in enumerate(_grupos(campos).values()):
+    grupos = _grupos(campos)
+
+    # O cartao mensal (duas linhas por dia) continua listando so os dias
+    # preenchidos.
+    if not any(campo.layout == LAYOUT_LINHA_UNICA for campo in campos):
+        for indice, grupo in enumerate(grupos.values()):
+            registro, linha_excel = _mapear_grupo(
+                grupo, indice, referencia, funcionario
+            )
+            linhas_excel.append(linha_excel)
+            if registro_tem_conteudo(registro):
+                registros.append(registro)
+        return registros, linhas_excel
+
+    # Cartao quinzenal: a planilha lista todos os dias do periodo, inclusive
+    # os que ficaram em branco. Dias vazios nao viram registro no banco.
+    por_dia: dict[int, list[str]] = {}
+    for indice, grupo in enumerate(grupos.values()):
         registro, linha_excel = _mapear_grupo(
             grupo, indice, referencia, funcionario
         )
-        linhas_excel.append(linha_excel)
+        por_dia.setdefault(grupo[0].dia or 0, linha_excel)
         if registro_tem_conteudo(registro):
             registros.append(registro)
+
+    inicio, fim = _faixa_de_dias(referencia, por_dia)
+    for dia in range(inicio, fim + 1):
+        linha = por_dia.pop(dia, None)
+        if linha is None:
+            linha = [_rotulo_dia_vazio(dia, referencia), "", "", "", "", ""]
+        linhas_excel.append(linha)
+    # Dias fora da faixa (leitura inconsistente) nao podem sumir da planilha.
+    for dia in sorted(por_dia):
+        linhas_excel.append(por_dia[dia])
     return registros, linhas_excel
 
 
@@ -312,7 +476,8 @@ def map_registro(
     referencia: str | None,
     funcionario: str | None,
 ) -> tuple[Registro, list[str]]:
-    campos = separar_linha(linha)
+    mes, ano = _periodo_referencia(referencia)
+    campos = separar_linha(linha, mes=mes, ano=ano)
     if campos is None:
         campos = CamposLinha(dia=None, mes=None, ano=None, horas=())
     return _mapear_grupo([campos], indice, referencia, funcionario)

@@ -18,6 +18,7 @@ from .modelo2 import mapper as modelo2_mapper
 from .modelo2 import parser as modelo2_parser
 from .modelo3 import mapper as modelo3_mapper
 from .modelo3 import parser as modelo3_parser
+from .modelo4 import imagem as modelo4_imagem
 from .modelo4 import mapper as modelo4_mapper
 from .modelo4 import parser as modelo4_parser
 from .modelos import FolhaProcessada
@@ -42,6 +43,9 @@ class _Fluxo:
         [list[list[str]], str | None, str | None, Any],
         tuple[list[Any], list[list[str]]],
     ] | None = None
+    preparar_imagem: Callable[[bytes], bytes] | None = None
+    diagnostico: Callable[[list[list[str]], str], str] | None = None
+    avisos_estrutura: Callable[[list[list[str]]], list[str]] | None = None
 
 
 _FLUXO_MODELO1 = _Fluxo(
@@ -83,6 +87,9 @@ _FLUXO_MODELO4 = _Fluxo(
     map_registro=modelo4_mapper.map_registro,
     manter_registro=modelo4_mapper.registro_tem_conteudo,
     map_folha=modelo4_mapper.mapear_folha,
+    preparar_imagem=modelo4_imagem.preparar_imagem,
+    diagnostico=modelo4_parser.diagnostico,
+    avisos_estrutura=modelo4_parser.avisos_estrutura,
 )
 
 
@@ -126,12 +133,15 @@ async def _ocr_com_retry(
     dados: bytes,
     nome: str,
     lote: str | None,
+    preparar: Callable[[bytes], bytes] | None = None,
 ) -> str:
     """Executa o OCR com retentativas para falhas transitorias do provedor."""
     total = config.TENTATIVAS_OCR
     for tentativa in range(1, total + 1):
         try:
-            return await mcp_client.ocr_imagem(sessao, dados)
+            if preparar is None:
+                return await mcp_client.ocr_imagem(sessao, dados)
+            return await mcp_client.ocr_imagem(sessao, dados, preparar)
         except Exception as exc:  # noqa: BLE001
             if tentativa >= total:
                 raise
@@ -161,11 +171,14 @@ async def _ocr_uma(
     nome: str,
     dados: bytes,
     lote: str | None,
+    preparar: Callable[[bytes], bytes] | None = None,
 ) -> _ResultadoOCR:
     async with semaforo:
         inicio = time.monotonic()
         try:
-            markdown = await _ocr_com_retry(sessao, dados, nome, lote)
+            markdown = await _ocr_com_retry(
+                sessao, dados, nome, lote, preparar
+            )
         except Exception as exc:  # noqa: BLE001
             duracao = time.monotonic() - inicio
             detalhe = f"{type(exc).__name__}: {exc}"
@@ -190,6 +203,7 @@ async def _ocr_todas(
     sessao: Any,
     imagens: list[tuple[str, bytes]],
     lote: str | None,
+    preparar: Callable[[bytes], bytes] | None = None,
 ) -> list[_ResultadoOCR]:
     if not imagens:
         return []
@@ -198,11 +212,28 @@ async def _ocr_todas(
     total = len(imagens)
     tarefas = [
         asyncio.create_task(
-            _ocr_uma(sessao, semaforo, indice, total, nome, dados, lote)
+            _ocr_uma(sessao, semaforo, indice, total, nome, dados, lote, preparar)
         )
         for indice, (nome, dados) in enumerate(imagens, start=1)
     ]
     return list(await asyncio.gather(*tarefas))
+
+
+def _salvar_markdown_ocr(
+    markdown: str, nome: str, lote: str | None
+) -> Path | None:
+    """Grava o OCR bruto de um cartao sem registros, para diagnostico."""
+    if not markdown or not config.salvar_ocr_falha():
+        return None
+    try:
+        pasta = config.DIR_LOGS / "ocr"
+        pasta.mkdir(parents=True, exist_ok=True)
+        destino = pasta / f"{lote or 'avulso'}-{Path(nome).stem}.md"
+        destino.write_text(markdown, encoding="utf-8")
+        return destino
+    except OSError as exc:  # noqa: BLE001
+        log.warning("Nao foi possivel salvar o OCR de %s: %s", nome, exc)
+        return None
 
 
 def _processar_markdown(
@@ -248,12 +279,31 @@ def _processar_markdown(
                 registros.append(registro)
 
     if not registros and not fluxo.aceitar_sem_registros:
+        detalhe = fluxo.diagnostico(grid, markdown) if fluxo.diagnostico else ""
         logs.warning(
             "OCR",
-            f"Imagem {indice}/{total} sem horarios reconhecidos",
+            f"Imagem {indice}/{total} sem horarios reconhecidos"
+            + (f": {detalhe}" if detalhe else ""),
             lote,
         )
+        salvo = _salvar_markdown_ocr(markdown, nome, lote)
+        if salvo is not None:
+            logs.info("OCR", f"OCR bruto salvo em {salvo}", lote)
         return None, [f'Nenhum horario reconhecido em "{nome}".']
+
+    avisos_folha: list[str] = []
+    if registros and fluxo.avisos_estrutura is not None:
+        for aviso in fluxo.avisos_estrutura(grid):
+            avisos_folha.append(aviso)
+            for registro in registros:
+                registro.revisar = True
+                if registro.confianca is None or registro.confianca > 0.7:
+                    registro.confianca = 0.7
+                registro.observacao = (
+                    f"{registro.observacao} {aviso}"
+                    if registro.observacao
+                    else aviso
+                )
 
     stem = Path(nome).stem
     origem_hash = hashlib.sha256(dados).hexdigest()
@@ -271,7 +321,7 @@ def _processar_markdown(
         linhas_excel=linhas_excel,
         origem_hash=origem_hash,
     )
-    return folha, []
+    return folha, avisos_folha
 
 
 async def _processar_com(
@@ -294,7 +344,9 @@ async def _processar_com(
     )
     inicio_lote = time.monotonic()
     async with mcp_client.abrir_mcp() as sessao:
-        resultados = await _ocr_todas(sessao, imagens, lote)
+        resultados = await _ocr_todas(
+            sessao, imagens, lote, fluxo.preparar_imagem
+        )
 
     for indice, ((nome, dados), resultado) in enumerate(
         zip(imagens, resultados), start=1

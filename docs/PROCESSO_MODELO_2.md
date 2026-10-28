@@ -439,7 +439,7 @@ Passos:
 
 ```powershell
 cd C:\Users\usr-ti02\Pontos\OCR-PontoFacil
-.\.venv\Scripts\python.exe -m uvicorn backend.main:app --reload --port 8000
+.\.venv\Scripts\python.exe -m uvicorn backend.main:app --reload --port 8090
 ```
 
 2. Abrir a página `/processamento/modelo-2` e enviar

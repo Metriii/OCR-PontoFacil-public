@@ -194,7 +194,7 @@ PontoFacil/src/
 
 | Aspecto | Definição |
 |---------|-----------|
-| Base URL | `VITE_API_URL` (ex.: `http://localhost:8000`) |
+| Base URL | `VITE_API_URL` (ex.: `http://localhost:8090`) |
 | Endpoint de upload | `POST {API_URL}/processar`, multipart, campo `arquivos` |
 | Endpoint de download | `GET {API_URL}/download/{arquivo}` |
 | Progresso | XHR `upload.onprogress` (upload; o OCR não reporta progresso fino) |
@@ -259,14 +259,17 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt -r backend\requirements.txt
 $env:PADDLEOCR_MCP_AISTUDIO_ACCESS_TOKEN = "<token>"   # ou token.txt
-uvicorn backend.main:app --reload --port 8000
+uvicorn backend.main:app --reload --port 8090
 
 # Frontend
 cd frontend
 npm i            # ou: bun install
-$env:VITE_API_URL = "http://localhost:8000"            # ou frontend\.env
+$env:VITE_API_URL = "http://localhost:8090"            # ou frontend\.env
 npm run dev
 ```
+
+> Não use a porta 8000: o OpenCode sonda `http://127.0.0.1:8000/v1` (descoberta
+> local de vLLM) e as chamadas poluem o log do uvicorn.
 
 Variáveis de ambiente:
 

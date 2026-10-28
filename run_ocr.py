@@ -17,7 +17,7 @@ body_bytes = (
     ('--' + boundary + '--\r\n').encode()
 )
 
-req = urllib.request.Request('http://localhost:8000/processar', data=body_bytes,
+req = urllib.request.Request('http://localhost:8090/processar', data=body_bytes,
                             headers={'Content-Type': 'multipart/form-data; boundary=' + boundary})
 r = urllib.request.urlopen(req, timeout=600)
 print(r.read().decode('utf-8')[:500])

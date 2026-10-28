@@ -52,8 +52,8 @@ backend/
 - Planilhas com nome de URL ASCII (slug) e prefixo único; `arquivo` mantém nome amigável.
 
 ### Config do frontend
-- Criado `PontoFacil/.env.local` com `VITE_API_URL=http://localhost:8010`
-  (porta 8000 estava ocupada por outro serviço na máquina).
+- `PontoFacil/.env` com `VITE_API_URL=http://localhost:8090` (a porta 8000 é
+  evitada por causa da descoberta local de vLLM do OpenCode).
 
 ### Dependência nova
 - `pip install fastapi` (0.145.0) no `.venv`. Demais pacotes já existiam
@@ -64,7 +64,7 @@ backend/
 
 ## Verificação (executado)
 
-1. App importa e sobe (`uvicorn backend.main:app --port 8010`); `/openapi.json`
+1. App importa e sobe (`uvicorn backend.main:app --port 8090`); `/openapi.json`
    lista `/processar` e `/download/{arquivo}`.
 2. `POST /processar` com `ALESSANY.jpg` (OCR **real**) → `total_cartoes=1`,
    `processados=1`, **31 registros**, 1 planilha + `consolidado`. ✅
@@ -77,7 +77,7 @@ backend/
 
 ```powershell
 # Backend (raiz, venv ativo)
-uvicorn backend.main:app --reload --port 8010
+uvicorn backend.main:app --reload --port 8090
 # Frontend
 cd PontoFacil; bun install; bun run dev
 ```
@@ -89,4 +89,6 @@ cd PontoFacil; bun install; bun run dev
 - Unificar os repositórios (mover frontend para `frontend/`, remover `.git` aninhado).
 - Baixar/instalar deps do frontend (`node_modules`) para o dev server.
 - Ajustar `data`/`consolidado` conforme regras reais, se necessário.
-- Porta padrão: 8010 (8000 ocupada). Revisar `.env.local`.
+- Porta padrão do backend: 8090. A 8000 é evitada porque o OpenCode sonda
+  `http://127.0.0.1:8000/v1` (descoberta local de vLLM) e as chamadas caem no
+  log do uvicorn. `VITE_API_URL` deve apontar para `http://localhost:8090`.

@@ -2,7 +2,12 @@
 
 Execucao (a partir da raiz do projeto, com o venv ativo):
 
-    uvicorn backend.main:app --reload --port 8000
+    uvicorn backend.main:app --reload --port 8090
+
+A porta 8090 evita a 8000: o OpenCode (agente de desenvolvimento) procura um
+servidor vLLM em http://127.0.0.1:8000/v1 e sonda /health + /v1/models
+periodicamente. Como esta API responde /health com 200, as sondagens
+apareciam no log do uvicorn como 404 em /v1/models.
 
 Variaveis de ambiente relevantes:
     PADDLEOCR_MCP_AISTUDIO_ACCESS_TOKEN  (ou arquivo token.txt na raiz)

@@ -112,7 +112,7 @@ No PowerShell, na mesma janela em que o backend será iniciado:
 ```powershell
 $env:PADDLEOCR_MCP_AISTUDIO_REQUEST_TIMEOUT = "300"
 $env:PADDLEOCR_MCP_AISTUDIO_POLL_TIMEOUT = "900"
-.\.venv\Scripts\python.exe -m uvicorn backend.main:app --reload --port 8000
+.\.venv\Scripts\python.exe -m uvicorn backend.main:app --reload --port 8090
 ```
 
 Para valer em novas janelas, use `setx` e depois abra um terminal novo:

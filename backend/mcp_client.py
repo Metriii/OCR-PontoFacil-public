@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import time
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from io import BytesIO
 from typing import Any
@@ -91,7 +92,11 @@ def _preparar_imagem(imagem_bytes: bytes) -> bytes:
         return imagem_bytes
 
 
-async def ocr_imagem(sessao: ClientSession, imagem_bytes: bytes) -> str:
+async def ocr_imagem(
+    sessao: ClientSession,
+    imagem_bytes: bytes,
+    preparar: Callable[[bytes], bytes] | None = None,
+) -> str:
     inicio = time.monotonic()
     tools = (await sessao.list_tools()).tools
     nome = _escolher_tool(tools)
@@ -100,7 +105,9 @@ async def ocr_imagem(sessao: ClientSession, imagem_bytes: bytes) -> str:
     schema = getattr(tool, "input_schema", None) or getattr(tool, "inputSchema", None)
     props = schema.get("properties", {}) if isinstance(schema, dict) else {}
 
-    imagem_bytes = _preparar_imagem(imagem_bytes)
+    # Cada modelo pode informar seu proprio preparo de imagem; sem isso o
+    # comportamento padrao (compartilhado pelos Modelos 1, 2 e 3) e mantido.
+    imagem_bytes = (preparar or _preparar_imagem)(imagem_bytes)
     argumentos: dict[str, Any] = {
         "input_data": base64.b64encode(imagem_bytes).decode("ascii")
     }

@@ -27,6 +27,9 @@ logs/
 node_modules/
 .frontend-build/
 
+# Amostras reais de cartao (dados pessoais) e relatorios de avaliacao
+amostras/
+
 # Imagens da folha de ponto (dados pessoais)
 *.jpg
 *.jpeg

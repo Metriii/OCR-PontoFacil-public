@@ -1,5 +1,5 @@
-"""Modelo 4: registro mensal de ponto com duas linhas por dia."""
+"""Modelo 4: registro de ponto com dois layouts (duas linhas e linha unica)."""
 
-from . import mapper, parser
+from . import imagem, mapper, parser
 
-__all__ = ["mapper", "parser"]
+__all__ = ["imagem", "mapper", "parser"]

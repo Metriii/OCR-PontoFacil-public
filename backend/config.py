@@ -145,6 +145,16 @@ def runtime_params_ocr() -> dict[str, object]:
     return {"prompt_label": "table"}
 
 
+def salvar_ocr_falha() -> bool:
+    """Guarda o markdown bruto do Modelo 4 quando nao ha horarios.
+
+    O arquivo fica em ``logs/ocr`` (pasta ignorada pelo git) porque contem
+    dados pessoais do cartao. Desligue com ``PONTOFACIL_M4_SALVAR_OCR=0``.
+    """
+    valor = os.getenv("PONTOFACIL_M4_SALVAR_OCR", "1").strip().lower()
+    return valor not in {"0", "false", "nao", "não", "off"}
+
+
 def ambiente_mcp() -> dict[str, str]:
     env = dict(os.environ)
     env.setdefault("PADDLEOCR_MCP_AISTUDIO_REQUEST_TIMEOUT", MCP_REQUEST_TIMEOUT)
