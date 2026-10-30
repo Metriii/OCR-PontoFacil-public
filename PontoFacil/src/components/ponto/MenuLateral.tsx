@@ -1,7 +1,8 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Clock, FileSpreadsheet, Home, Menu } from "lucide-react";
-import { useState } from "react";
+import { Clock, FileSpreadsheet, Home, KeyRound, Menu, Users } from "lucide-react";
+import { useState, useSyncExternalStore } from "react";
 
+import { AlterarSenhaDialog } from "@/components/ponto/AlterarSenhaDialog";
 import {
   Sheet,
   SheetContent,
@@ -10,22 +11,55 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { inscreverSessao, usuarioDaSessao } from "@/lib/sessao";
 import { cn } from "@/lib/utils";
 
 const ITENS = [
   { to: "/", label: "Home", icon: Home, exact: true },
-  { to: "/processamento/modelo-1", label: "Modelo 1", icon: FileSpreadsheet, exact: false },
-  { to: "/processamento/modelo-2", label: "Modelo 2", icon: FileSpreadsheet, exact: false },
-  { to: "/processamento/modelo-3", label: "Modelo 3", icon: FileSpreadsheet, exact: false },
-  { to: "/processamento/modelo-4", label: "Modelo 4", icon: FileSpreadsheet, exact: false },
+  {
+    to: "/processamento/modelo-1",
+    label: "Modelo 1 · Listra Azul",
+    icon: FileSpreadsheet,
+    exact: false,
+  },
+  {
+    to: "/processamento/modelo-2",
+    label: "Modelo 2 · Padrão",
+    icon: FileSpreadsheet,
+    exact: false,
+  },
+  {
+    to: "/processamento/modelo-3",
+    label: "Modelo 3 · Listra Verde",
+    icon: FileSpreadsheet,
+    exact: false,
+  },
+  {
+    to: "/processamento/modelo-4",
+    label: "Modelo 4 · Simples",
+    icon: FileSpreadsheet,
+    exact: false,
+  },
+  {
+    to: "/processamento/modelo-5",
+    label: "Modelo 5 · Caderno",
+    icon: FileSpreadsheet,
+    exact: false,
+  },
 ] as const;
+
+const ITENS_ADMIN = [{ to: "/usuarios", label: "Usuários", icon: Users, exact: false }] as const;
 
 export function MenuLateral() {
   const [open, setOpen] = useState(false);
+  const [senhaAberta, setSenhaAberta] = useState(false);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const usuario = useSyncExternalStore(inscreverSessao, usuarioDaSessao, () => null);
 
   const ativo = (to: string, exact: boolean) =>
     exact ? pathname === to : pathname === to || pathname.startsWith(`${to}/`);
+
+  const itens = usuario?.papel === "admin" ? [...ITENS, ...ITENS_ADMIN] : ITENS;
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -49,7 +83,7 @@ export function MenuLateral() {
           <SheetDescription className="sr-only">Menu de navegação do PontoFácil.</SheetDescription>
         </SheetHeader>
         <nav className="mt-6 flex flex-col gap-1" aria-label="Navegação principal">
-          {ITENS.map((item) => {
+          {itens.map((item) => {
             const Icone = item.icon;
             const selecionado = ativo(item.to, item.exact);
             return (
@@ -70,8 +104,22 @@ export function MenuLateral() {
               </Link>
             );
           })}
+          {usuario ? (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                setSenhaAberta(true);
+              }}
+              className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-foreground transition-colors hover:bg-muted hover:text-primary"
+            >
+              <KeyRound className="h-4 w-4" />
+              Alterar minha senha
+            </button>
+          ) : null}
         </nav>
       </SheetContent>
+      <AlterarSenhaDialog aberto={senhaAberta} onOpenChange={setSenhaAberta} />
     </Sheet>
   );
 }

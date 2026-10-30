@@ -559,6 +559,7 @@ class TestSaidaConsolidada(unittest.TestCase):
 
             from backend import config, servico
             from backend.main import app
+            from backend.tests.apoio import autenticar
         except ModuleNotFoundError as exc:
             if exc.name != "mcp":
                 raise
@@ -579,9 +580,12 @@ class TestSaidaConsolidada(unittest.TestCase):
                 patch.object(config, "SYNC_EXCEL_ATIVO", False),
             ):
                 with TestClient(app) as cliente:
+                    autenticar(cliente)
                     resposta = cliente.post(
                         "/processar",
                         files={"arquivos": ("ANA.jpg", b"imagem", "image/jpeg")},
+                        data={"aceite_ocr": "true"},
+                        headers={"Idempotency-Key": "teste-atualizacao"},
                     )
 
             self.assertEqual(resposta.status_code, 200)

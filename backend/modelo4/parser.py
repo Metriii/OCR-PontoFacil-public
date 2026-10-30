@@ -1,22 +1,23 @@
-"""Parsing do registro de ponto do Modelo 4.
+"""Parsing do registro de ponto (nucleo compartilhado dos Modelos 4 e 5).
 
-O Modelo 4 aceita dois layouts de cartao:
+O nucleo reconhece dois layouts de cartao:
 
-``duas-linhas``
+``duas-linhas`` (Modelo 5)
     Cartao "REGISTRO DE PONTO" com as colunas ``DIA | MES | NO`` e duas linhas
     fisicas por data: a primeira traz a entrada e a saida para o intervalo; a
     segunda, a volta do intervalo e a saida final. E o layout originalmente
     implementado.
 
-``linha-unica``
+``linha-unica`` (Modelo 4)
     Cartao quinzenal (SNIRAK e similares) com o dia em uma unica coluna
     (``DIAS``), as colunas ``MANHA | TARDE | EXTRA`` e **uma linha por dia** com
     as quatro batidas escritas atravessando as celulas. O mes e o ano ficam no
     cabecalho (``MES`` / ``ANO``) e a quinzena (``1ª QUINZENA``) define a faixa
     de dias.
 
-Modulo exclusivo do Modelo 4. Nao importa utilitarios dos Modelos 1, 2 ou 3
-(apenas ``horarios.corrigir_artefato_2``, compartilhado e sem estado).
+Cada modelo forca o seu layout; ``layout_evidente`` permite recusar a imagem
+enviada ao modelo errado. O modulo nao importa utilitarios dos Modelos 1, 2 ou
+3 (apenas ``horarios.corrigir_artefato_2``, compartilhado e sem estado).
 """
 
 from __future__ import annotations
@@ -679,6 +680,51 @@ def detectar_layout(grid: list[list[str]]) -> str:
     return LAYOUT_DUAS_LINHAS
 
 
+def layout_evidente(
+    grid: list[list[str]], markdown: str | None = None
+) -> str | None:
+    """Le o layout somente pelo cabecalho, sem inferir pelas linhas.
+
+    Olha as primeiras linhas do grid escolhido **e** das demais tabelas do
+    markdown, porque o OCR costuma separar o cabecalho da tabela de horarios.
+    Serve para recusar uma imagem enviada ao modelo errado. Quando o cabecalho
+    nao e reconhecido devolve ``None``: nesse caso o cartao e processado com o
+    layout do proprio modelo (e marcado para revisao), porque perder o cartao
+    inteiro por causa de um OCR ruim e pior que pedir conferencia.
+    """
+    linhas = [
+        linha
+        for tabela in html_tabelas(markdown or "")
+        for linha in tabela[:14]
+    ]
+    linhas.extend(grid[:14])
+    textos = [_sem_acento(" ".join(linha)).upper() for linha in linhas]
+
+    # MANHA/TARDE/EXTRA so aparecem no cartao quinzenal.
+    for texto in textos:
+        if "MANHA" in texto and "TARDE" in texto:
+            return LAYOUT_LINHA_UNICA
+        if "EXTRA" in texto and "ENTRADA" in texto and "SAIDA" in texto:
+            return LAYOUT_LINHA_UNICA
+
+    for texto in textos:
+        if re.search(r"\bDIA\b", texto) and re.search(r"\bMES\b", texto):
+            return LAYOUT_DUAS_LINHAS
+    return None
+
+
+def validar_layout(
+    grid: list[list[str]], markdown: str | None = None
+) -> str | None:
+    """Recusa o cartao do Modelo 5 enviado ao Modelo 4."""
+    if layout_evidente(grid, markdown) == LAYOUT_DUAS_LINHAS:
+        return (
+            "Imagem com duas linhas por data (Modelo 5); "
+            "processe-a no Modelo 5."
+        )
+    return None
+
+
 def selecionar_grid(markdown: str) -> list[list[str]] | None:
     """Retorna o grid com mais linhas de dia reconhecidas."""
     melhor: list[list[str]] | None = None
@@ -943,7 +989,9 @@ def periodo_cabecalho(
 
 
 def referencia(
-    grid: list[list[str]], texto: str | None = None
+    grid: list[list[str]],
+    texto: str | None = None,
+    layout: str | None = None,
 ) -> str | None:
     """Periodo do cartao: cabecalho (linha unica) ou menor/maior data."""
     plano = " ".join(" ".join(linha) for linha in grid)
@@ -954,7 +1002,7 @@ def referencia(
     if m:
         return f"{m.group(1)} a {m.group(2)}"
 
-    if detectar_layout(grid) == LAYOUT_LINHA_UNICA:
+    if (layout or detectar_layout(grid)) == LAYOUT_LINHA_UNICA:
         periodo = periodo_cabecalho(grid, texto) or _mes_ano_texto(
             texto, _ano_cabecalho(grid, texto)
         )

@@ -30,10 +30,16 @@ consiga continuar o projeto sem ficar perdida**. Cada assunto fica em um arquivo
 | [`21-ocr-concorrente.md`](./21-ocr-concorrente.md) | Execução: OCR concorrente por lote, configuração, testes e validação real |
 | [`22-sincronizacao-excel.md`](./22-sincronizacao-excel.md) | Execução: sincronização automática Excel → SQLite com metadados, watcher e upsert |
 | [`23-modelo4-registro-mensal.md`](./23-modelo4-registro-mensal.md) | Execução: Modelo 4 (registro mensal), margem branca no OCR, parser, frontend e validação real |
+| [`24-modelo2-batida-omitida-amanda.md`](./24-modelo2-batida-omitida-amanda.md) | Execução: ampliação da imagem do Modelo 2 para 2400 px (batida omitida no dia 16 da AMANDA) |
+| [`25-modelo2-saida-14-17.md`](./25-modelo2-saida-14-17.md) | Execução: correção da saída `17:xx` lida como `14:xx` no Modelo 2 (evidências e revisão) |
+| [`26-modelo5-registro-duas-linhas.md`](./26-modelo5-registro-duas-linhas.md) | Execução: separação Modelo 4 (quinzenal) / Modelo 5 (duas linhas por data) + robustez do lote (avisos por imagem, coluna extra, `Nº` × ano) |
+| [`27-autenticacao-etapa1.md`](./27-autenticacao-etapa1.md) | Execução: autenticação em duas etapas (senha + código por e-mail), sessões, CSRF e proteção dos endpoints |
+| [`28-auditoria-ocr-previa.md`](./28-auditoria-ocr-previa.md) | Execução: auditoria no servidor, aviso obrigatório de OCR, idempotência, prévia de planilhas e endurecimento |
+| [`29-usuario-master-senha-minima.md`](./29-usuario-master-senha-minima.md) | Execução: usuário master provisionado e senha mínima ajustada para 8 caracteres |
 
 ## Como usar (próxima sessão)
 
-1. Leia o arquivo mais recente de `memoria/` (hoje, `23-modelo4-registro-mensal.md`) e `04-resposta-final.md` para saber **onde paramos**.
+1. Leia o arquivo mais recente de `memoria/` (hoje, `29-usuario-master-senha-minima.md`) e `04-resposta-final.md` para saber **onde paramos**.
 2. Leia `02-decisoes.md` para não contradizer decisões já tomadas.
 3. Consulte [`../docs/SDD.md`](../docs/SDD.md) e [`../docs/ARQUITETURA.md`](../docs/ARQUITETURA.md) para o design.
 4. Ao final de uma nova sessão, **adicione** um novo par de arquivos numerados

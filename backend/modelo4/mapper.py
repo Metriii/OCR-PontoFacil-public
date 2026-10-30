@@ -1,12 +1,13 @@
-"""Mapeia o registro de ponto (Modelo 4) para o contrato do frontend.
+"""Mapeia o registro de ponto para o contrato do frontend.
 
-Dois layouts sao aceitos (ver ``parser``):
+Nucleo compartilhado dos Modelos 4 e 5, que reconhece dois layouts (ver
+``parser``):
 
-``duas-linhas``
+``duas-linhas`` (Modelo 5)
     Duas linhas fisicas por data: a primeira com a entrada e a saida para o
     intervalo; a segunda com a volta do intervalo e a saida final.
 
-``linha-unica``
+``linha-unica`` (Modelo 4)
     Uma linha por dia com as quatro batidas na mesma linha (cartao quinzenal).
 
 O Excel mantem as mesmas seis colunas dos Modelos 1 e 3.
@@ -16,7 +17,8 @@ from __future__ import annotations
 
 import re
 from datetime import date
-from collections.abc import Iterable
+from dataclasses import replace
+from collections.abc import Callable, Iterable
 
 from ..modelos import Registro
 from .parser import (
@@ -420,14 +422,27 @@ def mapear_folha(
     referencia: str | None,
     funcionario: str | None,
     _jornada: object | None = None,
+    layout: str | None = None,
+    separador: Callable[[list[str], int | None, int | None], CamposLinha | None]
+    | None = None,
 ) -> tuple[list[Registro], list[list[str]]]:
-    """Agrupa as linhas de cada data e devolve registros + Excel."""
+    """Agrupa as linhas de cada data e devolve registros + Excel.
+
+    ``layout`` forca o layout do cartao, ignorando a deteccao por linha. O
+    Modelo 4 usa ``linha-unica`` e o Modelo 5 usa ``duas-linhas``.
+
+    ``separador`` permite ao Modelo 5 aplicar o proprio ``separar_linha``
+    (sem alterar o nucleo compartilhado); quando omitido usa o do Modulo 4.
+    """
     mes, ano = _periodo_referencia(referencia)
+    separar = separador or separar_linha
     campos = [
         campo
         for linha in linhas
-        if (campo := separar_linha(linha, mes=mes, ano=ano)) is not None
+        if (campo := separar(linha, mes, ano)) is not None
     ]
+    if layout is not None:
+        campos = [replace(campo, layout=layout) for campo in campos]
     campos = preencher_datas(campos)
     campos = corrigir_datas_apos_feriado(campos)
 
@@ -468,6 +483,22 @@ def mapear_folha(
     for dia in sorted(por_dia):
         linhas_excel.append(por_dia[dia])
     return registros, linhas_excel
+
+
+def mapear_folha_linha_unica(
+    linhas: list[list[str]],
+    referencia: str | None,
+    funcionario: str | None,
+    jornada: object | None = None,
+) -> tuple[list[Registro], list[list[str]]]:
+    """Variante do Modelo 4: cartão quinzenal, uma linha por dia."""
+    return mapear_folha(
+        linhas,
+        referencia,
+        funcionario,
+        jornada,
+        layout=LAYOUT_LINHA_UNICA,
+    )
 
 
 def map_registro(

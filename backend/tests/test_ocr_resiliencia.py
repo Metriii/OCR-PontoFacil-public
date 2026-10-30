@@ -288,6 +288,7 @@ class TestLockProcessamento(unittest.TestCase):
 
             from backend.main import app
             from backend.rotas import processar
+            from backend.tests.apoio import autenticar
         except ModuleNotFoundError as exc:
             if exc.name != "mcp":
                 raise
@@ -305,11 +306,14 @@ class TestLockProcessamento(unittest.TestCase):
                 processar._LOCK_PROCESSAMENTO.acquire()
                 try:
                     with TestClient(app) as cliente:
+                        autenticar(cliente)
                         resposta = cliente.post(
                             "/processar",
                             files={
                                 "arquivos": ("ANA.jpg", b"imagem", "image/jpeg")
                             },
+                            data={"aceite_ocr": "true"},
+                            headers={"Idempotency-Key": "teste-lock-global"},
                         )
                 finally:
                     processar._LOCK_PROCESSAMENTO.release()

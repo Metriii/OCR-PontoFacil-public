@@ -27,17 +27,18 @@ import {
   type ResultadoProcessamento,
 } from "@/lib/api";
 import { MenuLateral } from "@/components/ponto/MenuLateral";
+import { AvisoOcrDialog } from "@/components/ponto/AvisoOcrDialog";
 
 export const Route = createFileRoute("/processamento/modelo-2")({
   head: () => ({
     meta: [
-      { title: "Modelo 2 — Folha de Ponto Diária — PontoFácil" },
+      { title: "Modelo 2 — Padrão | PontoFácil" },
       {
         name: "description",
         content:
           "Envie folhas de ponto diárias, revise os horários reconhecidos e gere planilhas Excel.",
       },
-      { property: "og:title", content: "Modelo 2 — Folha de Ponto Diária — PontoFácil" },
+      { property: "og:title", content: "Modelo 2 — Padrão | PontoFácil" },
       {
         property: "og:description",
         content: "Envie folhas de ponto diárias, revise os horários e gere planilhas Excel.",
@@ -89,6 +90,7 @@ function Index() {
   const [erro, setErro] = useState<string | null>(null);
   const [res, setRes] = useState<ResultadoProcessamento | null>(null);
   const [registros, setRegistros] = useState<Registro[]>([]);
+  const [avisoAberto, setAvisoAberto] = useState(false);
   const fotosRef = useRef<HTMLInputElement>(null);
   const pastaRef = useRef<HTMLInputElement>(null);
   const zipRef = useRef<HTMLInputElement>(null);
@@ -189,8 +191,22 @@ function Index() {
     (i) => i.kind === "imagem" || i.kind === "pdf" || (i.zipCount ?? 1) > 0,
   );
   const totalCartoes = items.reduce((s, i) => s + (i.kind === "zip" ? (i.zipCount ?? 0) : 1), 0);
+function gerarIdempotencyKey(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
 
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
+    /[xy]/g,
+    (caractere) => {
+      const aleatorio = Math.floor(Math.random() * 16);
+      const valor = caractere === "x" ? aleatorio : (aleatorio & 0x3) | 0x8;
+      return valor.toString(16);
+    },
+  );
+}
   async function processar() {
+    if (loading) return;
     setErro(null);
     setLoading(true);
     setEtapa(0);
@@ -203,6 +219,7 @@ function Index() {
           if (p >= 100) setEtapa(1);
         },
         "modelo-2",
+        { aceiteOcr: true, idempotencyKey: gerarIdempotencyKey() },      
       );
       setEtapa(3);
       setRes(r);
@@ -228,7 +245,7 @@ function Index() {
           </div>
           <div>
             <h1 className="font-display text-2xl font-bold text-primary">PontoFácil</h1>
-            <p className="text-sm text-muted-foreground">Folha de ponto diária</p>
+            <p className="text-sm text-muted-foreground">Modelo 2 · Padrão</p>
           </div>
           <Link
             to="/"
@@ -403,7 +420,7 @@ function Index() {
         <Section title="2. Processamento">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
             <button
-              onClick={processar}
+              onClick={() => setAvisoAberto(true)}
               disabled={!validos.length || loading || !connected}
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-6 py-3 font-semibold text-primary-foreground shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -498,6 +515,14 @@ function Index() {
           )}
         </section>
       </main>
+      <AvisoOcrDialog
+        aberto={avisoAberto}
+        onCancelar={() => setAvisoAberto(false)}
+        onConfirmar={() => {
+          setAvisoAberto(false);
+          void processar();
+        }}
+      />
     </div>
   );
 }

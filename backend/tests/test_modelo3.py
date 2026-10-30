@@ -366,6 +366,7 @@ class TestEndpointModelo3(unittest.TestCase):
             from backend import config, servico
             from backend.main import app
             from backend.modelos import FolhaProcessada, Registro
+            from backend.tests.apoio import autenticar
         except ModuleNotFoundError as exc:
             if exc.name != "mcp":
                 raise
@@ -411,9 +412,11 @@ class TestEndpointModelo3(unittest.TestCase):
                 patch.object(config, "SYNC_EXCEL_ATIVO", False),
             ):
                 with TestClient(app) as cliente:
+                    autenticar(cliente)
                     resposta = cliente.post(
                         "/processar",
-                        data={"modelo": "modelo-3"},
+                        data={"modelo": "modelo-3", "aceite_ocr": "true"},
+                        headers={"Idempotency-Key": "teste-modelo-3"},
                         files={"arquivos": ("ana.jpg", b"imagem", "image/jpeg")},
                     )
 

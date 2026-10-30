@@ -11,12 +11,11 @@ from .. import config
 
 router = APIRouter(tags=["download"])
 
-_MEDIA_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+MEDIA_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
-@router.get("/download/{arquivo}")
-def baixar(arquivo: str) -> FileResponse:
-    # Impede path traversal: aceita apenas um nome simples.
+def resolver_arquivo(arquivo: str) -> Path:
+    """Resolve um nome simples dentro de DIR_SAIDA, sem permitir path traversal."""
     nome = Path(arquivo).name
     if nome != arquivo or not nome:
         raise HTTPException(status_code=400, detail="Nome de arquivo invalido.")
@@ -24,5 +23,10 @@ def baixar(arquivo: str) -> FileResponse:
     caminho = (config.DIR_SAIDA / nome).resolve()
     if config.DIR_SAIDA.resolve() not in caminho.parents or not caminho.is_file():
         raise HTTPException(status_code=404, detail="Arquivo nao encontrado.")
+    return caminho
 
-    return FileResponse(caminho, media_type=_MEDIA_XLSX, filename=nome)
+
+@router.get("/download/{arquivo}")
+def baixar(arquivo: str) -> FileResponse:
+    caminho = resolver_arquivo(arquivo)
+    return FileResponse(caminho, media_type=MEDIA_XLSX, filename=caminho.name)

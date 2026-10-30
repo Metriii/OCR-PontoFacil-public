@@ -1,13 +1,13 @@
 import { QueryClient } from "@tanstack/react-query";
 import { createRouter, rootRouteId } from "@tanstack/react-router";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { routeTree } from "@/routeTree.gen";
 import { HistoryPanel } from "@/components/ponto/HistoryPanel";
 import { RegistrosPontoPanel } from "@/components/ponto/RegistrosPontoPanel";
+import { type ResumoRegistroPonto } from "@/lib/api";
 import { filterRecords, type SpreadsheetRecord } from "@/lib/history";
-import type { ResumoRegistroPonto } from "@/lib/api";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 const router = createRouter({ routeTree, context: { queryClient: new QueryClient() } });
 
@@ -18,6 +18,7 @@ describe("App routing", () => {
     "/processamento/modelo-2",
     "/processamento/modelo-3",
     "/processamento/modelo-4",
+    "/processamento/modelo-5",
   ];
 
   it.each(rotas)("casa a rota %s em uma página própria (não 404)", (path) => {
@@ -33,7 +34,8 @@ describe("Histórico de planilhas (Central)", () => {
     expect(screen.queryByText("Dados de exemplo")).toBeNull();
   });
 
-  it("renderiza linhas reais quando há registros", () => {
+  it("renderiza linhas reais quando há registros", async () => {
+    const visualizar = vi.fn();
     const registros: SpreadsheetRecord[] = [
       {
         id: "1",
@@ -42,12 +44,35 @@ describe("Histórico de planilhas (Central)", () => {
         generatedAt: "2026-10-20T12:00:00.000Z",
         model: "modelo-1",
         downloadUrl: "/download/abc_consolidado.xlsx",
+        fileSize: 8192,
+      },
+    ];
+    render(<HistoryPanel records={registros} onVisualizar={visualizar} />);
+    expect(screen.getByText("consolidado.xlsx")).toBeTruthy();
+    expect(screen.getByText("BRUNIELLY")).toBeTruthy();
+    expect(screen.getByText(".xlsx · 8,0 KB")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Baixar consolidado.xlsx" })).toHaveAttribute(
+      "href",
+      "/download/abc_consolidado.xlsx",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Visualizar consolidado.xlsx" }));
+    await waitFor(() => expect(visualizar).toHaveBeenCalledWith("consolidado.xlsx"));
+  });
+
+  it("lista arquivo sem modelo identificado sem quebrar o histórico", () => {
+    const registros: SpreadsheetRecord[] = [
+      {
+        id: "x",
+        fileName: "manual.xlsx",
+        employee: "—",
+        generatedAt: "2026-10-20T12:00:00.000Z",
+        model: "desconhecido",
       },
     ];
     render(<HistoryPanel records={registros} />);
-    expect(screen.getByText("consolidado.xlsx")).toBeTruthy();
-    expect(screen.getByText("BRUNIELLY")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Baixar arquivo" })).toBeTruthy();
+    expect(within(screen.getByRole("table")).getByText("Modelo não identificado")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Arquivo indisponível" })).toBeTruthy();
   });
 });
 
@@ -71,7 +96,7 @@ describe("Registros de ponto (Central)", () => {
     render(<RegistrosPontoPanel registros={registros} />);
     expect(screen.getByText("ANA")).toBeTruthy();
     expect(screen.getByText("01/10/2026 - 31/10/2026")).toBeTruthy();
-    expect(screen.getByText("Modelo 1")).toBeTruthy();
+    expect(screen.getByText("Modelo 1 · Listra Azul")).toBeTruthy();
     expect(screen.getByText("21/10/2026")).toBeTruthy();
     expect(screen.getAllByText("-")).toHaveLength(4);
   });

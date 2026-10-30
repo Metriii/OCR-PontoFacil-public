@@ -1,15 +1,14 @@
-# Processo - Modelo 4 (Registro de Ponto)
+# Processo - Modelo 4 (cartão quinzenal)
 
-> Documento de apoio do **Modelo 4** do PontoFácil. Registra os dois layouts
-> aceitos, as decisões, as regras implementadas e a validação com imagens
-> reais.
+> Documento de apoio do **Modelo 4** do PontoFácil. A partir da separação de
+> 2026-10-29 o Modelo 4 aceita **somente o layout de linha única** (cartão
+> quinzenal). O cartão "REGISTRO DE PONTO" com duas linhas por data passou a ser
+> o **Modelo 5**.
 
-- **Versão:** 1.3
-- **Data:** 2026-10-28
-- **Status:** implementado e validado com OCR real (layouts A e B, lote de 6 cartões)
-- **Referências visuais:**
-  `WhatsApp Image 2026-10-01 at 13.57.37 (2).jpeg` (layout A) e
-  `C:\Users\usr-ti02\Pontos\alexandre.jpg` (layout B)
+- **Versão:** 2.0
+- **Data:** 2026-10-29
+- **Status:** implementado e validado com OCR real
+- **Referência visual:** `C:\Users\usr-ti02\Pontos\alexandre.jpg`
 - **Rota:** `/processamento/modelo-4`
 - **Modelo no backend:** `modelo-4`
 
@@ -17,18 +16,17 @@
 
 ## 1. Objetivo
 
-Processar cartões de ponto do Modelo 4, gerar o Excel consolidado de seis
-colunas e permitir revisão dos horários na interface.
+Processar cartões **quinzenais** de ponto (uma linha por dia), gerar o Excel
+consolidado de seis colunas e permitir revisão dos horários na interface.
 
 O Modelo 4 é independente: `backend/modelo4/` não importa os Modelos 1, 2 ou 3.
-O Modelo 1 e os demais fluxos permanecem inalterados.
+O núcleo do parser/mapper é compartilhado com o Modelo 5, mas cada modelo força
+o seu layout:
 
-O parser reconhece automaticamente **dois layouts**:
-
-| Layout | Identificação | Formato |
+| Modelo | Layout | Formato |
 | --- | --- | --- |
-| `duas-linhas` (A) | colunas `DIA \| MÊS \| Nº` | duas linhas físicas por data |
-| `linha-unica` (B) | colunas `MANHÃ \| TARDE \| EXTRA` | uma linha por dia, quatro batidas |
+| `modelo-4` | `linha-unica` (B) | uma linha por dia, quatro batidas |
+| `modelo-5` | `duas-linhas` (A) | duas linhas físicas por data |
 
 ---
 
@@ -41,55 +39,24 @@ O parser reconhece automaticamente **dois layouts**:
   registro. Como não há horários, o banco não persiste a linha.
 - O Excel mantém **seis colunas**, igual aos Modelos 1 e 3:
   `Dia da semana | Entrar | Saída para intervalo | Volta intervalo | Saída | Hora total`.
-- Só os dias com horário (ou anotação) viram **registro**. No Excel:
-  - layout A (`duas-linhas`): só os dias preenchidos viram linha;
-  - layout B (`linha-unica`): a planilha lista **todos os dias da quinzena**
-    (1–15 ou 16–30), inclusive os vazios, na ordem do cartão.
+- A planilha lista **todos os dias da quinzena** (1–15 ou 16–30), inclusive os
+  vazios, na ordem do cartão. Dias vazios não viram registro no banco.
 - Não houve mudança de schema nem no sincronizador Excel -> SQLite.
 - O preparo de imagem do Modelo 4 é **isolado**: `backend/modelo4/imagem.py`
-  só é injetado no fluxo do Modelo 4; os Modelos 1, 2 e 3 continuam usando
-  `mcp_client._preparar_imagem` sem alteração.
+  só é injetado no fluxo do Modelo 4; os Modelos 1, 2, 3 e 5 continuam usando
+  os seus próprios preparos.
+- O Modelo 4 **recusa** uma imagem cujo cabeçalho seja claramente do layout de
+  duas linhas (Modelo 5), com aviso explícito. Cartão ambíguo **não é
+  recusado**: entra com o layout forçado do Modelo 4 e marcado para revisão.
 
 ---
 
-## 3. Layout A - `DIA | MÊS | Nº`
-
-### 3.1 Cabeçalho
-
-- Título: **REGISTRO DE PONTO**.
-- Mês manuscrito no topo (ex.: **Setembro**) e número de página (`80`).
-- Nome do funcionário manuscrito no topo (na imagem de referência,
-  **Cristiano**).
-- Colunas: `DIA | MÊS | Nº`.
-- `Nº` é o ano com dois dígitos (`26` -> `2026`).
-- `ENTRADA` e `SAÍDA` possuem duas subcolunas cada: `ASSINATURA` e `HORAS`.
-- Não existe coluna de total; o total é calculado pelo sistema.
-
-### 3.2 Linhas por data
-
-O cartão usa normalmente **duas linhas físicas por data**:
-
-1. primeira linha: `entrada` e `saída para o intervalo`;
-2. segunda linha: `volta do intervalo` e `saída final`.
-
-Exemplo da imagem real:
-
-```text
-02  09  26  Crusting  08/06  Crusting  12/07
-02  09  26  Crusting  13/07  Crusting  17/05
-```
-
-O parser também aceita dia curto com apenas uma linha e duas batidas (ex.:
-`05/09` com `08:00` e `13:08`), marcando o registro para revisão.
-
----
-
-## 3.3 Layout B - `DIAS | MANHÃ | TARDE | EXTRA`
+## 3. Layout - `DIAS | MANHÃ | TARDE | EXTRA`
 
 Cartão quinzenal (SNIRAK e similares), fotografado e preenchido à mão. Exemplo
 real: `alexandre.jpg` (1ª quinzena, setembro/2026).
 
-### 3.3.1 Cabeçalho
+### 3.1 Cabeçalho
 
 - `MÊS` e `ANO` manuscritos (`SE FENBRE` e `ANO 2026` no OCR da imagem).
 - `1ª QUINZENA` define a faixa do período (`01` a `15`; a 2ª vai de `16` ao
@@ -98,7 +65,7 @@ real: `alexandre.jpg` (1ª quinzena, setembro/2026).
 - O nome aparece no campo `EMPREGADO`; quando o OCR não lê a caligrafia, o
   nome do arquivo enviado é usado (aba do Excel e banco).
 
-### 3.3.2 Linhas por data
+### 3.2 Linhas por data
 
 **Uma linha por dia**, com as quatro batidas escritas atravessando as células.
 O OCR frequentemente devolve duas batidas na mesma célula
@@ -113,7 +80,7 @@ O OCR frequentemente devolve duas batidas na mesma célula
 
 Mapeamento posicional: `entrada | saída para o intervalo | volta do intervalo | saída`.
 
-### 3.3.3 Regras específicas
+### 3.3 Regras específicas
 
 - Dia isolado na primeira coluna, validado com `fullmatch` de `1..31` **e**
   presença de horário/anotação na linha (impede cabeçalho, dias em branco e
@@ -146,31 +113,13 @@ Mapeamento posicional: `entrada | saída para o intervalo | volta do intervalo |
 
 ---
 
-## 4. OCR
+## 4. OCR e preparo de imagem
 
-### 4.1 Problema encontrado (layout A)
+### 4.1 Perfil do Modelo 4 (`backend/modelo4/imagem.py`)
 
-Sem margem, o OCR do PaddleOCR dividia os horários em células separadas e
-perdia os minutos finais. A tabela ficava com colunas deslocadas e inviável para
-produção.
-
-### 4.2 Solução (layout A)
-
-`backend/mcp_client.py::_preparar_imagem` agora:
-
-1. aplica `ImageOps.exif_transpose`;
-2. adiciona uma margem branca de **5% do maior lado** (mínimo de 24 px);
-3. amplia a imagem para pelo menos `LARGURA_MINIMA_OCR` (1200 px);
-4. salva em JPEG (qualidade 92).
-
-A margem branca evita que a última coluna de horário encoste na borda da
-imagem, onde o detector de tabela cortava os minutos.
-
-### 4.3 Perfil do layout B (`backend/modelo4/imagem.py`)
-
-O cartão quinzenal é uma foto com caligrafia azul sobre papel bege. Para esse
-layout o fluxo do Modelo 4 injeta um preparo próprio
-(`_Fluxo.preparar_imagem`), sem alterar o preparo padrão:
+O cartão quinzenal é uma foto com caligrafia azul sobre papel bege. O fluxo do
+Modelo 4 injeta um preparo próprio (`_Fluxo.preparar_imagem`), sem alterar o
+preparo padrão dos demais modelos:
 
 1. `ImageOps.exif_transpose` e conversão para RGB;
 2. uso do **canal vermelho** (a tinta azul fica escura e o papel claro);
@@ -185,36 +134,40 @@ comportamento anterior.
 
 Comparação na mesma imagem (`alexandre.jpg`):
 
-| | OCR padrão | Perfil do layout B |
+| | OCR padrão | Perfil do Modelo 4 |
 | --- | --- | --- |
 | Mês | `SE FENBRE` | `SETEMBRE` |
 | Horários | células mescladas e `92:00` | uma batida por célula |
 | Registros mapeados | 0 | 4 |
 
-### 4.4 Saída real validada (layout A)
+### 4.2 Validação de layout
 
-Com a imagem inteira e margem branca, o OCR entregou linhas de sete células:
+`backend/modelo4/parser.py` expõe:
 
-```text
-['02', '09', '26', 'Crusting', '08/06', 'Crusting', '12/07']
-['07', '09', '26', 'Fructo', '', 'fructo', '']
-```
+- `layout_evidente(grid, markdown=None)`: lê somente o cabeçalho; devolve
+  `linha-unica`, `duas-linhas` ou `None`. Examina o grid escolhido **e** as
+  demais tabelas do markdown, porque o OCR costuma separar o cabeçalho da
+  tabela de horários.
+- `validar_layout(grid, markdown=None)`: recusa o cartão quando o cabeçalho é
+  claramente de duas linhas
+  (`"Imagem com duas linhas por data (Modelo 5); processe-a no Modelo 5."`).
 
-As assinaturas (`Crusting`, `Estrutivo`, `Fernado`) são ignoradas. O nome
-manuscrito no topo pode sair como `Gritua` ou `Pristine`; nesse caso o sistema
-usa o texto lido e o nome da aba continua vindo do arquivo enviado.
+Sem evidência de layout, o cartão **não é recusado**: segue com o layout
+forçado do Modelo 4 e revisão.
 
 ---
 
 ## 5. Parser (`backend/modelo4/parser.py`)
 
 - `detectar_layout`: identifica `duas-linhas` (cabeçalho `DIA/MÊS/Nº`) ou
-  `linha-unica` (cabeçalho `MANHÃ/TARDE/EXTRA`).
+  `linha-unica` (cabeçalho `MANHÃ/TARDE/EXTRA`). No Modelo 4 o layout é
+  forçado no mapper, então a detecção só serve de diagnóstico.
 - `selecionar_grid`: escolhe a tabela com mais linhas de data reconhecidas.
 - `linhas_dia`: mantém linhas com data, horários ou anotação.
 - `separar_linha`:
   - extrai `dia`, `mes` e `ano` de células numéricas ou de data compacta;
-  - no layout B, aceita o dia isolado e completa mês/ano pelo cabeçalho;
+  - no layout de linha única, aceita o dia isolado e completa mês/ano pelo
+    cabeçalho;
   - recupera o dia quando a caligrafia gruda nele o primeiro horário
     (`108:50` -> dia `1` + `08:50`; `1 08:50`; `1013:30` -> dia `10`);
   - aceita horário sem os dois pontos (`0820`) **somente** em linha com dia
@@ -237,18 +190,18 @@ usa o texto lido e o nome da aba continua vindo do arquivo enviado.
 - `corrigir_datas_apos_feriado`: corrige o erro do OCR que repete o dia do
   feriado na primeira linha de trabalho seguinte. Exemplo real: feriado no dia
   `07`, linha seguinte lida como `07`; o parser ajusta para `08`.
-- `referencia`: no layout B usa o cabeçalho + quinzena
-  (`01/09/2026 a 15/09/2026`); no layout A usa período explícito ou a
-  menor/maior data reconhecida (`02/09/2026 a 23/09/2026`).
+- `referencia(..., layout=)`: no layout de linha única usa o cabeçalho +
+  quinzena (`01/09/2026 a 15/09/2026`). O Modelo 4 passa
+  `layout="linha-unica"` explicitamente.
 - `avisos_estrutura`: detecta quando o OCR juntou números de dia ao cabeçalho
   (`MANHÃ`/`ENTRADA`). Nesse caso a numeração das linhas fica deslocada e o
   cartão inteiro vai para revisão com observação explícita.
 - `diagnostico`: resumo (`layout`, linhas com horário/dia, mês, ano, quinzena)
   gravado no log quando o cartão não gera registros.
-- `nome_colaborador`: lê o nome no texto acima da tabela e, no layout B, no
-  campo `EMPREGADO`; exclui mês, cabeçalhos e linhas com números. Termos de
-  empresa/estabelecimento (`BOX`, `PATIO`, `SHOPPING`, `LTDA`...) são
-  recusados, e o serviço usa o nome do arquivo.
+- `nome_colaborador`: lê o nome no texto acima da tabela e, no layout de linha
+  única, no campo `EMPREGADO`; exclui mês, cabeçalhos e linhas com números.
+  Termos de empresa/estabelecimento (`BOX`, `PATIO`, `SHOPPING`, `LTDA`...)
+  são recusados, e o serviço usa o nome do arquivo.
 
 ### 5.1 Anotações
 
@@ -262,12 +215,12 @@ usa o texto lido e o nome da aba continua vindo do arquivo enviado.
 
 ## 6. Mapper (`backend/modelo4/mapper.py`)
 
+- `mapear_folha(..., layout=None)` força o layout dos campos; o Modelo 4 usa
+  `mapear_folha_linha_unica`, que passa `layout="linha-unica"`.
 - Agrupa as linhas físicas pela data completa.
-- Com duas linhas, distribui as batidas em:
-  `entrada | saída_almoco | volta_almoco | saída`.
-- Com uma linha e quatro batidas (layout B), preenche as colunas pela posição
-  lida no cartão (`_distribuir_por_coluna`); só usa a ordem de leitura quando a
-  linha não trouxe posições confiáveis (ex.: hora reparada).
+- Com uma linha e quatro batidas, preenche as colunas pela posição lida no
+  cartão (`_distribuir_por_coluna`); só usa a ordem de leitura quando a linha
+  não trouxe posições confiáveis (ex.: hora reparada).
 - Com uma linha e duas batidas, usa a heurística:
   - manhã curta -> `entrada` + `saída_almoco`;
   - tarde -> `volta_almoco` + `saída`;
@@ -280,11 +233,11 @@ usa o texto lido e o nome da aba continua vindo do arquivo enviado.
 - Feriados ficam com `confianca=0.0`, `revisar=True` e observação `Feriado`.
 - A linha do Excel usa o rótulo `02 - quarta-feira` (ou
   `07 - segunda-feira (Feriado)`) e sempre tem seis colunas.
-- No layout B, quatro batidas em uma linha não marcam `extra`.
-- Layout B: o Excel lista **todos os dias da quinzena** (1–15; 16–30 na 2ª),
-  com os dias vazios sem horário. Esses dias vazios não viram registro no banco.
-  O rótulo do dia vazio é `05 - sábado` quando mês/ano foram lidos, ou só `05`
-  quando não foram. Layout A continua listando apenas os dias preenchidos.
+- Quatro batidas em uma linha não marcam `extra`.
+- O Excel lista **todos os dias da quinzena** (1–15; 16–30 na 2ª), com os dias
+  vazios sem horário. Esses dias vazios não viram registro no banco. O rótulo
+  do dia vazio é `05 - sábado` quando mês/ano foram lidos, ou só `05` quando
+  não foram.
 - Se o mês/ano do cabeçalho não for lido, o registro **não é descartado**: ele
   entra no Excel com o dia e as batidas, sem dia da semana, `revisar=True` e a
   observação `Mês/ano não identificados no cabeçalho; conferir a data.`
@@ -294,13 +247,14 @@ usa o texto lido e o nome da aba continua vindo do arquivo enviado.
 
 ## 7. Serviço, rota e Excel
 
-- `backend/config.py`: `modelo-4` adicionado a `MODELOS_VALIDOS`.
+- `backend/config.py`: `modelo-4` em `MODELOS_VALIDOS`.
 - `backend/servico.py`: `_FLUXO_MODELO4` e `processar_folhas_modelo4`; o fluxo
-  também injeta `preparar_imagem` (layout B) sem afetar os demais modelos.
+  injeta `preparar_imagem` (layout B), `map_folha=mapear_folha_linha_unica` e
+  `validar_layout`.
 - `backend/rotas/processar.py`: despacha `modelo-4` no `POST /processar`.
 - `backend/excel.py`: usa o mesmo cabeçalho de seis colunas dos Modelos 1 e 3.
 - Importação manual aceita `--modelo modelo-4`; a planilha sem metadados também
-  funciona porque o cabeçalho é o base.
+  funciona porque o cabeçalho é a base.
 - O sincronizador Excel -> SQLite não precisou de alteração: linhas de feriado
   e dias sem horários são ignoradas pelo trigger existente.
 
@@ -312,7 +266,7 @@ usa o texto lido e o nome da aba continua vindo do arquivo enviado.
 - Rota: `/processamento/modelo-4`.
 - Chamada: `processarCartoes(..., "modelo-4")`.
 - Card: `PontoFacil/src/components/ponto/ModelCards.tsx`, com a imagem
-  `PontoFacil/src/assets/modelo4.jpg`.
+  `PontoFacil/src/assets/modelo4.jpg` (`alexandre.jpg`).
 - Menu lateral: link `Modelo 4`.
 - Tipos `ModeloId` e `ModelId` incluem `modelo-4`.
 - `routeTree.gen.ts` é regenerado pelo Vite.
@@ -325,33 +279,23 @@ usa o texto lido e o nome da aba continua vindo do arquivo enviado.
 .\.venv\Scripts\python.exe -m unittest discover -s backend\tests -t . -q
 ```
 
-Resultado: **239 testes OK** (67 deles do Modelo 4).
+Resultado: **267 testes OK** (Modelos 4 e 5 juntos).
 
 ```bash
 cd PontoFacil
-npm test -- --run
+npm test
 ```
 
-Resultado: **14 testes OK**.
+Resultado: **15 testes OK**.
 
 ```bash
 npm run build
 ```
 
-Resultado: build de produção concluído, incluindo o chunk
-`modelo-4-*.js` e o asset `modelo4-*.jpg`.
+Resultado: build de produção concluído, incluindo os chunks `modelo-4-*.js`,
+`modelo-5-*.js` e os assets `modelo4-*.jpg` / `modelo5-*.jpg`.
 
-Validação com o OCR real (`modelo4_pad.md`, layout A):
-
-- 33 linhas físicas reconhecidas;
-- 19 registros/linhas de Excel;
-- dias `02`, `03`, `04`, `05`, `07`, `08`, `09`, `10`, `11`, `12`, `14`, `15`,
-  `16`, `17`, `18`, `19`, `21`, `22`, `23` de setembro de 2026;
-- feriados nos dias `07` e `16`;
-- datas `08` e `17` corrigidas após os feriados;
-- dias curtos `05`, `12` e `19` com duas batidas e revisão.
-
-Validação com o OCR real (`alexandre.jpg`, layout B, `amostras/_ocr/alexandre.md`):
+Validação com o OCR real (`alexandre.jpg`, `amostras/_ocr/alexandre.md`):
 
 - período `01/09/2026 a 15/09/2026` (1ª quinzena);
 - 4 registros (dias com horário); dias `05` a `15` em branco aparecem no Excel
@@ -403,8 +347,6 @@ Quando um cartão ainda assim ficar sem registros, `logs/ocr/` recebe o
 markdown bruto (`PONTOFACIL_M4_SALVAR_OCR=0` desliga) e o log traz um resumo
 com `layout`, linhas com dia/horário, mês, ano e quinzena.
 
----
-
 ### 9.2 Colunas preservadas e quinzena completa (28/10/2026)
 
 Com as mesmas seis amostras de `amostras/_ocr/`, o preenchimento passou a usar
@@ -427,6 +369,16 @@ Leituras que continuam erradas vêm do **OCR**, não do mapeamento: em
 ordem (`12.11` onde a foto sugere `13:11`; `15:30` na coluna da entrada). Como a
 coluna é preservada, esses casos chegam ao Excel exatamente como foram lidos.
 
+### 9.3 Separação dos Modelos 4 e 5 (29/10/2026)
+
+- O Modelo 4 passou a recusar o cartão de duas linhas (Modelo 5).
+- O cartão `alexandre.jpg` continua sendo aceito no Modelo 4.
+- O cartão do Modelo 5 é recusado no Modelo 4 e vice-versa, sempre com aviso
+  explícito e markdown bruto em `logs/ocr/`.
+- Cartões com cabeçalho ambíguo não são recusados: entram com revisão.
+- O Modelo 4 continua listando os 15 dias da quinzena; o Modelo 5 lista apenas
+  os dias preenchidos (ver `docs/PROCESSO_MODELO_5.md`).
+
 ---
 
 ## 10. Limitações conhecidas
@@ -435,8 +387,6 @@ coluna é preservada, esses casos chegam ao Excel exatamente como foram lidos.
   aba do Excel e o `nome_funcionario` no banco continuam vindo do nome do
   arquivo enviado. Pelo mesmo motivo, o campo `EMPREGADO` é ignorado quando traz
   o nome do estabelecimento (`rosangela.jpg`: `EMPREGADO City Box Patio`).
-- A correção de data após feriado é uma heurística baseada no layout A; o
-  registro é marcado para revisão.
 - Se o OCR perder uma data no meio do cartão, a data é herdada da linha
   anterior e o registro é marcado para revisão.
 - A reparação de hora inválida (`92:00` -> `22:00`) depende de a sequência

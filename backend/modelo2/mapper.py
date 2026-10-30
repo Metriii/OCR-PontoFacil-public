@@ -290,7 +290,13 @@ def mapear_folha(
     """Mapeia a folha inteira depois de normalizar os horarios."""
     campos = [separar_linha(linha) for linha in linhas]
     validos = [campos_linha for campos_linha in campos if campos_linha is not None]
-    normalizados = iter(normalizar_folha(validos, jornada))
+    dias_uteis = {
+        campos_linha.dia
+        for campos_linha in validos
+        if (data := _data_do_dia(campos_linha.dia, referencia)) is not None
+        and data.weekday() < 5
+    }
+    normalizados = iter(normalizar_folha(validos, jornada, dias_uteis))
 
     registros: list[Registro] = []
     linhas_excel: list[list[str]] = []

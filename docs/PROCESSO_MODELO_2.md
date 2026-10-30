@@ -128,6 +128,9 @@ devendo ser ignoradas.
 - A coluna de assinatura pode conter uma imagem ou um nome manuscrito.
 - O OCR pode devolver as colunas com pequenos deslocamentos; o parser precisa
   ser tolerante a isso.
+- No Modelo 2 a imagem é ampliada para 2400 px antes do OCR
+  (`backend/modelo2/imagem.py`). Em 1200 px o OCR omitia uma das quatro batidas
+  em várias linhas, e as seguintes "escorregavam" para a esquerda.
 
 ---
 
@@ -235,6 +238,11 @@ Responsabilidades:
 5. Se o reparo não for seguro, anular o campo e marcar revisão.
 6. Nunca aceitar `saída do intervalo > volta do intervalo` ou
    `saída final <= volta do intervalo`.
+7. Corrigir a confusão de caligrafia `17:xx` lida como `14:xx` apenas em dia
+   útil sem anotação, com jornada completa (`>= 16:00`) e uma destas evidências:
+   leitura sistemática na folha (>= 60% das saídas em `14:xx`) ou tarde curta
+   (< 60 min) somada a outro dia útil já registrado em `17:xx`. Fora disso, o
+   `14:xx` é preservado e marcado para revisão.
 
 #### `backend/modelo2/mapper.py`
 

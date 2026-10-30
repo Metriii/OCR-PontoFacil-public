@@ -13,6 +13,7 @@ from unittest.mock import patch
 RAIZ = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(RAIZ))
 
+from backend.modelo2 import imagem as modelo2_imagem
 from backend.modelo2 import mapper, normalizacao, parser  # noqa: E402
 from backend.modelo2.parser import JornadaPrevista, separar_linha  # noqa: E402
 
@@ -66,11 +67,13 @@ JORNADA_18 = JornadaPrevista("08:00", "18:00", "12:00", "14:00")
 def _normalizar(
     linhas: list[list[str]],
     jornada: JornadaPrevista | None = JORNADA_17,
+    dias_uteis: set[str] | None = None,
 ):
     campos = [separar_linha(linha) for linha in linhas]
     return normalizacao.normalizar_folha(
         [campo for campo in campos if campo is not None],
         jornada,
+        dias_uteis,
     )
 
 
@@ -404,6 +407,32 @@ class TestMapperModelo2(unittest.TestCase):
             ["01 - terça-feira", "08:07", "13:17", "14:18", "17:08", "08:00", ""],
         )
 
+    def test_mapear_folha_corrige_saida_14_sistematica_em_dia_util(self) -> None:
+        linhas = [
+            ["01", "Ter", "07:50", "13:10", "14:10", "14:11"],
+            ["02", "Qua", "07:50", "13:10", "14:10", "14:12"],
+            ["03", "Qui", "07:50", "13:10", "14:10", "14:13"],
+        ]
+        registros, linhas_excel = mapper.mapear_folha(
+            linhas, REFERENCIA, "FULANO", JORNADA_18
+        )
+        self.assertEqual(
+            [registro.saida for registro in registros],
+            ["17:11", "17:12", "17:13"],
+        )
+        self.assertTrue(all(registro.revisar for registro in registros))
+        self.assertEqual(linhas_excel[0][4], "17:11")
+
+    def test_mapear_folha_preserva_saida_14_no_sabado(self) -> None:
+        linhas = [
+            ["05", "Sab", "08:00", "11:43", "12:14", "14:07"],
+            ["08", "Ter", "08:00", "11:04", "12:06", "17:08"],
+        ]
+        registros, _ = mapper.mapear_folha(
+            linhas, REFERENCIA, "FULANO", JORNADA_18
+        )
+        self.assertEqual(registros[0].saida, "14:07")
+
     def test_anotacao_aparece_no_rotulo_da_planilha(self) -> None:
         _, linha_excel = _map(LINHAS[4])
         self.assertEqual(linha_excel[0], "09 - quarta-feira (FALTA Justificado)")
@@ -574,6 +603,166 @@ class TestNormalizacaoModelo2(unittest.TestCase):
         self.assertEqual(campos.entrada, "10:40")
         self.assertEqual(campos.ajuste, "")
 
+    def test_saida_14_sistematica_em_dia_util_vira_17(self) -> None:
+        campos = _normalizar(
+            [
+                ["01", "Ter", "07:50", "13:10", "14:10", "14:11"],
+                ["02", "Qua", "07:50", "13:10", "14:10", "14:12"],
+                ["03", "Qui", "07:50", "13:10", "14:10", "14:13"],
+            ],
+            JORNADA_18,
+            dias_uteis={"01", "02", "03"},
+        )
+        self.assertEqual(
+            [campos_linha.saida for campos_linha in campos],
+            ["17:11", "17:12", "17:13"],
+        )
+        self.assertTrue(all(campos_linha.forcar_revisao for campos_linha in campos))
+        self.assertTrue(
+            all("14/17" in campos_linha.ajuste for campos_linha in campos)
+        )
+
+    def test_saida_14_isolada_plausivel_e_preservada_com_revisao(self) -> None:
+        campos = _normalizar(
+            [
+                ["01", "Ter", "08:00", "12:00", "13:00", "17:00"],
+                ["02", "Qua", "08:00", "12:00", "13:00", "17:00"],
+                ["05", "Seg", "08:00", "11:03", "12:03", "14:02"],
+            ],
+            JORNADA_18,
+            dias_uteis={"01", "02", "05"},
+        )
+        self.assertEqual(campos[2].saida, "14:02")
+        self.assertTrue(campos[2].forcar_revisao)
+        self.assertIn("preservada", campos[2].ajuste)
+        self.assertEqual(campos[0].ajuste, "")
+
+    def test_saida_14_com_tarde_curta_e_corrigida(self) -> None:
+        campos = _normalizar(
+            [
+                ["01", "Ter", "08:00", "12:00", "13:00", "17:00"],
+                ["02", "Qua", "08:00", "12:00", "13:00", "17:00"],
+                ["03", "Qui", "08:00", "13:10", "14:10", "14:11"],
+            ],
+            JORNADA_18,
+            dias_uteis={"01", "02", "03"},
+        )
+        self.assertEqual(campos[2].saida, "17:11")
+        self.assertTrue(campos[2].forcar_revisao)
+        self.assertIn("corrigida", campos[2].ajuste)
+
+    def test_saida_14_com_tarde_curta_sem_17_na_folha_e_preservada(self) -> None:
+        campos = _normalizar(
+            [
+                ["01", "Qui", "04:52", "13:09", "", "15:09"],
+                ["02", "Sex", "04:49", "", "", "13:09"],
+                ["08", "Qui", "04:50", "13:00", "14:04", ""],
+                ["09", "Sex", "04:51", "13:09", "13:12", "14:02"],
+                ["13", "Ter", "04:46", "13:04", "14:04", "14:25"],
+                ["14", "Qua", "04:56", "13:12", "14:22", "18:42"],
+            ],
+            JORNADA_18,
+            dias_uteis={"01", "02", "08", "09", "13", "14"},
+        )
+        self.assertEqual(campos[3].saida, "14:02")
+        self.assertEqual(campos[4].saida, "14:25")
+        self.assertTrue(campos[3].forcar_revisao)
+        self.assertTrue(campos[4].forcar_revisao)
+        self.assertIn("preservada", campos[3].ajuste)
+
+    def test_saida_14_no_sabado_e_preservada(self) -> None:
+        campos = _normalizar(
+            [["05", "Sab", "08:00", "12:00", "13:00", "14:05"]],
+            JORNADA_18,
+            dias_uteis={"01"},
+        )[0]
+        self.assertEqual(campos.saida, "14:05")
+        self.assertEqual(campos.ajuste, "")
+
+    def test_saida_14_em_jornada_curta_e_preservada(self) -> None:
+        curta = JornadaPrevista("08:00", "14:00", "12:00", "13:00")
+        campos = _normalizar(
+            [["01", "Ter", "08:00", "12:00", "13:00", "14:05"]],
+            curta,
+            dias_uteis={"01"},
+        )[0]
+        self.assertEqual(campos.saida, "14:05")
+        self.assertEqual(campos.ajuste, "")
+
+    def test_saida_14_com_anotacao_e_preservada(self) -> None:
+        campos = _normalizar(
+            [["01", "Feria.", "07:55", "11:53", "12:20", "14:04"]],
+            JORNADA_18,
+            dias_uteis={"01"},
+        )[0]
+        self.assertEqual(campos.saida, "14:04")
+        self.assertEqual(campos.ajuste, "")
+
+    def test_saida_14_sem_jornada_apenas_sinaliza(self) -> None:
+        campos = _normalizar(
+            [["01", "Ter", "08:00", "12:00", "13:00", "14:05"]],
+            None,
+            dias_uteis={"01"},
+        )[0]
+        self.assertEqual(campos.saida, "14:05")
+        self.assertTrue(campos.forcar_revisao)
+        self.assertIn("preservada", campos.ajuste)
+
+
+class TestImagemModelo2(unittest.TestCase):
+    def _imagem(self, largura: int, altura: int) -> bytes:
+        from io import BytesIO
+
+        from PIL import Image
+
+        buffer = BytesIO()
+        Image.new("RGB", (largura, altura), "white").save(buffer, format="JPEG")
+        return buffer.getvalue()
+
+    def test_amplia_foto_pequena_para_2400_pixels(self) -> None:
+        from io import BytesIO
+
+        from PIL import Image
+
+        from backend.modelo2 import imagem
+
+        preparada = imagem.preparar_imagem(self._imagem(1080, 1500))
+        with Image.open(BytesIO(preparada)) as resultado:
+            self.assertEqual(resultado.width, imagem.LARGURA_ALVO)
+            self.assertGreater(resultado.height, 1500)
+
+    def test_limita_ampliacao_a_tres_vezes(self) -> None:
+        from io import BytesIO
+
+        from PIL import Image
+
+        from backend.modelo2 import imagem
+
+        preparada = imagem.preparar_imagem(self._imagem(400, 600))
+        with Image.open(BytesIO(preparada)) as resultado:
+            self.assertLess(resultado.width, imagem.LARGURA_ALVO)
+            self.assertLessEqual(
+                resultado.width, round((400 + 60) * imagem.ESCALA_MAXIMA)
+            )
+
+    def test_pdf_nao_e_alterado(self) -> None:
+        from backend.modelo2 import imagem
+
+        dados = b"%PDF-1.4 conteudo"
+        self.assertEqual(imagem.preparar_imagem(dados), dados)
+
+    def test_imagem_grande_nao_e_ampliada(self) -> None:
+        from io import BytesIO
+
+        from PIL import Image
+
+        from backend.modelo2 import imagem
+
+        preparada = imagem.preparar_imagem(self._imagem(3000, 4000))
+        with Image.open(BytesIO(preparada)) as resultado:
+            self.assertGreaterEqual(resultado.width, 3000)
+            self.assertLessEqual(resultado.width, 3400)
+
 
 class TestPipelineModelo2(unittest.IsolatedAsyncioTestCase):
     async def test_processa_folha_diaria_e_mantem_dias_em_branco_so_no_excel(self) -> None:
@@ -583,7 +772,8 @@ class TestPipelineModelo2(unittest.IsolatedAsyncioTestCase):
         async def abrir_falso():
             yield object()
 
-        async def ocr_falso(_sessao, _dados):
+        async def ocr_falso(_sessao, _dados, preparar=None):
+            self.assertIs(preparar, modelo2_imagem.preparar_imagem)
             return MARKDOWN
 
         with tempfile.TemporaryDirectory() as pasta:
@@ -626,7 +816,7 @@ class TestPipelineModelo2(unittest.IsolatedAsyncioTestCase):
         async def abrir_falso():
             yield object()
 
-        async def ocr_falso(_sessao, _dados):
+        async def ocr_falso(_sessao, _dados, preparar=None):
             return markdown
 
         with tempfile.TemporaryDirectory() as pasta:

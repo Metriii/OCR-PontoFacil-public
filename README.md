@@ -37,6 +37,71 @@ Gere um access token em https://aistudio.baidu.com e coloque em um arquivo
 `token.txt` na raiz (não versionado), ou defina a variável de ambiente
 `PADDLEOCR_MCP_AISTUDIO_ACCESS_TOKEN`.
 
+## Acesso e usuários
+
+Não há cadastro público. As contas são provisionadas pela CLI, que pede a
+senha no prompt (nunca em argumento de shell). A senha deve ter pelo menos 8
+caracteres:
+
+```bash
+.\.venv\Scripts\python.exe -m backend.usuarios criar --email pessoa@empresa.com --nome "Pessoa"
+.\.venv\Scripts\python.exe -m backend.usuarios senha --email pessoa@empresa.com
+.\.venv\Scripts\python.exe -m backend.usuarios desativar --email pessoa@empresa.com
+.\.venv\Scripts\python.exe -m backend.usuarios listar
+```
+
+O login tem duas etapas: senha + código de 6 dígitos enviado por e-mail. No
+modo `dev`, se `PONTOFACIL_EMAIL_MODO=arquivo`, o e-mail é gravado em
+`data/emails/` (útil para testar sem SMTP). Em produção o envio é sempre por
+SMTP real e o startup recusa configurações inseguras.
+
+Variáveis principais (ver `.env.example`):
+
+| Variável | Padrão |
+|---|---|
+| `PONTOFACIL_AMBIENTE` | `dev` (`producao` valida SMTP, segredo e cookie Secure) |
+| `PONTOFACIL_SEGREDO_SESSAO` | vazio em dev (efêmero); obrigatório em produção |
+| `PONTOFACIL_EMAIL_MODO` | `arquivo` em dev, `smtp` em produção |
+| `PONTOFACIL_SMTP_HOST` / `_PORTA` / `_SEGURANCA` | vazio / `587` / `starttls` |
+| `PONTOFACIL_SMTP_USUARIO` / `_SENHA` / `_REMETENTE` | vazio |
+| `PONTOFACIL_CORS_ORIGINS` | `*` em dev; obrigatório listar a origem em produção |
+| `PONTOFACIL_COOKIE_SECURE` | `1` em produção, `0` em dev |
+
+## Processamento, aviso de OCR e idempotência
+
+- Ao clicar em **Processar** em qualquer modelo, o frontend abre o aviso
+  obrigatório sobre as limitações do OCR. **Cancelar** apenas fecha o diálogo:
+  nenhuma requisição é enviada. Só **Estou ciente, continuar** inicia o OCR.
+- O backend também exige `aceite_ocr=true` no `POST /processar`; sem isso a
+  requisição é recusada com 400 e o OCR não começa.
+- Cada tentativa envia `Idempotency-Key` (UUID). O backend reserva a chave antes
+  do OCR e devolve **409** com `processing_id` se a mesma chave já estiver em
+  andamento ou concluída. Assim, duplo clique, retry de rede ou duas abas não
+  geram processamento duplicado.
+- Uma chave cujo processamento falhou pode ser reutilizada para nova tentativa.
+
+## Auditoria
+
+Os eventos são gravados no servidor na tabela `auditoria` do SQLite, sempre com
+o e-mail da sessão autenticada (nunca com dado enviado pelo cliente), timestamp
+UTC, ação, modelo, `processing_id`, status e resumo de erro sem tokens/senhas.
+
+- `auth_login`, `auth_codigo` e `auth_logout`: eventos de autenticação.
+- `ocr_aviso`: confirmação do aviso, gravada **antes** do OCR.
+- `ocr_processing`: `started`, `completed` ou `failed` do processamento.
+
+A confirmação e o início do OCR são auditorias obrigatórias: se não puderem ser
+gravadas, o processamento não começa. A consulta fica em `GET /auditoria`
+(protegida por sessão), com filtros `limite`, `offset`, `email`, `action` e
+`processing_id`.
+
+## Pré-visualização de planilhas
+
+O botão **Visualizar** no histórico abre uma prévia somente leitura no
+navegador (`GET /planilhas/{arquivo}/previa`), sem abrir o Excel local. A aba
+oculta `_PontoFacil` não é exposta e a resposta é limitada a 200 linhas, 50
+colunas e 20 abas por arquivo.
+
 ## Banco de dados e logs
 
 - **SQLite:** `data/pontofacil.db` (criado automaticamente na inicialização).

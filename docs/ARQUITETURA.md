@@ -76,12 +76,22 @@
 
 ```
 backend/
-├── main.py                 # app FastAPI, CORS, rotas
+├── main.py                 # app FastAPI, CORS, headers, rotas
+├── autenticacao.py         # sessoes, desafios de codigo, CSRF, dependencias
+├── seguranca.py            # scrypt, codigos, HMAC, tokens
+├── usuarios.py             # tabela e CLI de provisionamento (sem cadastro publico)
+├── emailer.py              # SMTP real ou modo arquivo (somente dev)
+├── auditoria.py            # tabela/consulta de eventos de auth e OCR
+├── processamentos.py       # reserva idempotente por Idempotency-Key
 ├── modelo1/                # EXCLUSIVO do Modelo 1 (/processamento/modelo-1)
 │   ├── gerar_excel.py      # CLI Excel + parse de horários (regra 20h–23h -> 08h)
 │   └── ler_imagem.py       # CLI OCR via MCP do PaddleOCR -> JSON
 ├── rotas/
-│   ├── processar.py        # POST /processar (multipart)
+│   ├── auth.py             # /auth/login, /verificar, /reenviar, /logout, /eu
+│   ├── processar.py        # POST /processar (multipart + aceite + idempotencia)
+│   ├── planilhas.py        # GET /planilhas + GET /planilhas/{arquivo}/previa
+│   ├── auditoria.py        # GET /auditoria (protegido)
+│   ├── registros.py        # GET /registros + /registros/resumo
 │   └── download.py         # GET /download/{arquivo}
 ├── servicos/
 │   ├── mcp_client.py       # sessão MCP reutilizável (pool 2–4)
@@ -195,10 +205,16 @@ PontoFacil/src/
 | Aspecto | Definição |
 |---------|-----------|
 | Base URL | `VITE_API_URL` (ex.: `http://localhost:8090`) |
-| Endpoint de upload | `POST {API_URL}/processar`, multipart, campo `arquivos` |
+| Autenticação | `POST /auth/login` (e-mail + senha) → `POST /auth/verificar` (código) → cookie de sessão httpOnly |
+| Sessão/CSRF | `GET /auth/eu` devolve usuário e `csrf_token`; escritas exigem `X-CSRF-Token` |
+| Endpoint de upload | `POST {API_URL}/processar`, multipart, campo `arquivos` + `aceite_ocr=true` + header `Idempotency-Key` |
+| Duplicidade | Mesma `Idempotency-Key` em andamento/concluída → `409` com `processing_id` |
 | Endpoint de download | `GET {API_URL}/download/{arquivo}` |
+| Histórico de planilhas | `GET {API_URL}/planilhas` (lista os `.xlsx` de `_out`) |
+| Visualizar planilha | `GET {API_URL}/planilhas/{arquivo}/previa` (prévia HTML, sem abrir o Excel local) |
+| Auditoria | `GET {API_URL}/auditoria` (sessão obrigatória) |
 | Progresso | XHR `upload.onprogress` (upload; o OCR não reporta progresso fino) |
-| CORS | Liberar a origem do dev server do Vite |
+| CORS | Liberar a origem do dev server do Vite; cookies exigem `credentials: include` |
 | Tipos | `Registro`, `Planilha`, `ResultadoProcessamento` (ver `SDD.md` §6) |
 
 > Detalhes de payload e erros: [`SDD.md`](./SDD.md) §5.
@@ -289,16 +305,28 @@ Variáveis de ambiente:
 
 - Token do AI Studio **nunca** versionado (`token.txt`/`.env` no `.gitignore`).
 - Imagens de folhas contêm dados pessoais → **não** versionar; descartar após processar.
-- Sanitizar nomes de arquivo/aba; validar tipo e tamanho dos uploads.
+- Sanitizar nomes de arquivo/aba; validar tipo e tamanho dos uploads (por
+  arquivo e total do lote).
 - CORS restrito à origem do frontend em produção.
+- Todas as rotas privadas exigem sessão; escritas exigem `X-CSRF-Token`.
+- Headers de resposta: `X-Content-Type-Options`, `X-Frame-Options`,
+  `Referrer-Policy`, `Permissions-Policy`; HSTS em produção.
+- O aviso de OCR é obrigatório no frontend e no backend (`aceite_ocr=true`).
+- A auditoria é gravada antes do OCR; se falhar, o processamento não começa.
+- `Idempotency-Key` impede processamento duplicado mesmo com duplo clique,
+  retry de rede ou duas abas.
 
 ---
 
 ## 10. Persistência SQLite e logs
 
 - `POST /processar` recebe o campo `modelo` (`modelo-1`, `modelo-2`,
-  `modelo-3` ou `modelo-4`; padrão `modelo-1`) e persiste os registros
-  extraídos antes de gerar o Excel.
+  `modelo-3`, `modelo-4` ou `modelo-5`; padrão `modelo-1`) e persiste os
+  registros extraídos antes de gerar o Excel.
+- A tabela `processamentos` guarda `idempotency_key` única, `processing_id`,
+  usuário, modelo, status (`started`/`completed`/`failed`) e timestamps.
+- A tabela `auditoria` guarda eventos de autenticação e OCR com timestamp UTC,
+  ação, modelo, `processing_id`, status e resumo de erro (sem segredos).
 - `GET /registros` consulta o histórico real, com filtros opcionais por
   funcionário, data e modelo.
 - O banco fica em `data/pontofacil.db`; os logs em `logs/YYYY-MM-DD.txt`.

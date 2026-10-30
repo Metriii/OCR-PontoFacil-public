@@ -17,6 +17,7 @@ const ROTAS = [
   "/processamento/modelo-2",
   "/processamento/modelo-3",
   "/processamento/modelo-4",
+  "/processamento/modelo-5",
 ];
 
 function criarRouter() {
@@ -56,24 +57,28 @@ describe("Menu lateral", () => {
 
     const home = await screen.findByRole("link", { name: "Home" });
     expect(home).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: "Modelo 1" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Modelo 1 · Listra Azul" })).toHaveAttribute(
       "href",
       "/processamento/modelo-1",
     );
-    expect(screen.getByRole("link", { name: "Modelo 2" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Modelo 2 · Padrão" })).toHaveAttribute(
       "href",
       "/processamento/modelo-2",
     );
-    expect(screen.getByRole("link", { name: "Modelo 3" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Modelo 3 · Listra Verde" })).toHaveAttribute(
       "href",
       "/processamento/modelo-3",
     );
-    expect(screen.getByRole("link", { name: "Modelo 4" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Modelo 4 · Simples" })).toHaveAttribute(
       "href",
       "/processamento/modelo-4",
     );
+    expect(screen.getByRole("link", { name: "Modelo 5 · Caderno" })).toHaveAttribute(
+      "href",
+      "/processamento/modelo-5",
+    );
 
-    fireEvent.click(screen.getByRole("link", { name: "Modelo 1" }));
+    fireEvent.click(screen.getByRole("link", { name: "Modelo 1 · Listra Azul" }));
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/processamento/modelo-1"));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());

@@ -3,15 +3,20 @@ import {
   Outlet,
   Link,
   createRootRouteWithContext,
+  isRedirect,
+  redirect,
   useRouter,
   HeadContent,
   Scripts,
   type ErrorComponentProps,
 } from "@tanstack/react-router";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useSyncExternalStore, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
+import { AlterarSenhaDialog } from "../components/ponto/AlterarSenhaDialog";
+import { isBackendConnected, obterSessao } from "../lib/api";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { carregarSessao, definirUsuario, inscreverSessao, usuarioDaSessao } from "../lib/sessao";
 
 function NotFoundComponent() {
   return (
@@ -74,6 +79,40 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
 }
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+  beforeLoad: async ({ location }) => {
+    // A guarda so roda no navegador: o SSR nao deve tentar acessar a API.
+    if (typeof window === "undefined") return;
+    if (import.meta.env.MODE === "test") return;
+
+    const publica = location.pathname === "/login";
+    const irParaLogin = () => {
+      if (publica) return;
+      throw redirect({
+        to: "/login",
+        search: { redirect: location.href },
+      });
+    };
+
+    // Fail-closed: sem backend configurado, nenhuma pagina privada abre.
+    if (!isBackendConnected()) return irParaLogin();
+
+    let sessao;
+    try {
+      sessao = await obterSessao();
+    } catch (erro) {
+      if (isRedirect(erro)) throw erro;
+      // API indisponivel/erro inesperado: nao renderiza conteudo privado.
+      return irParaLogin();
+    }
+
+    if (!sessao.autenticado) {
+      definirUsuario(null);
+      return irParaLogin();
+    }
+
+    definirUsuario(sessao.usuario ?? null);
+    if (publica) throw redirect({ to: "/" });
+  },
   head: () => ({
     meta: [
       { charSet: "utf-8" },
@@ -93,7 +132,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         href: appCss,
       },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
-      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap",
+      },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
     ],
   }),
@@ -119,11 +161,28 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const usuario = useSyncExternalStore(inscreverSessao, usuarioDaSessao, () => null);
+
+  useEffect(() => {
+    void carregarSessao();
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
+      {usuario?.senha_temporaria ? (
+        <div className="flex min-h-screen items-center justify-center bg-background px-4">
+          <AlterarSenhaDialog
+            aberto
+            obrigatorio
+            onOpenChange={() => {
+              /* troca obrigatoria: o dialogo nao fecha */
+            }}
+          />
+        </div>
+      ) : (
+        /* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */
+        <Outlet />
+      )}
     </QueryClientProvider>
   );
 }

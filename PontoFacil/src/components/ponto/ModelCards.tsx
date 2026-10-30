@@ -5,11 +5,12 @@ import m1 from "@/assets/modelo1.jpg";
 import m2 from "@/assets/modelo2.jpg";
 import m3 from "@/assets/modelo3.jpg";
 import m4 from "@/assets/modelo4.jpg";
+import m5 from "@/assets/modelo5.jpg";
 
 const MODELS = [
   {
     id: "modelo-1",
-    name: "Modelo 1",
+    name: "Modelo 1 · Listra Azul",
     desc: "Faixa azul",
     img: m1,
     ready: true,
@@ -17,7 +18,7 @@ const MODELS = [
   },
   {
     id: "modelo-2",
-    name: "Modelo 2",
+    name: "Modelo 2 · Padrão",
     desc: "Folha diária",
     img: m2,
     ready: true,
@@ -25,7 +26,7 @@ const MODELS = [
   },
   {
     id: "modelo-3",
-    name: "Modelo 3",
+    name: "Modelo 3 · Listra Verde",
     desc: "Cartão tradicional",
     img: m3,
     ready: true,
@@ -33,11 +34,19 @@ const MODELS = [
   },
   {
     id: "modelo-4",
-    name: "Modelo 4",
-    desc: "Registro mensal",
+    name: "Modelo 4 · Simples",
+    desc: "Cartão quinzenal",
     img: m4,
     ready: true,
     to: "/processamento/modelo-4",
+  },
+  {
+    id: "modelo-5",
+    name: "Modelo 5 · Caderno",
+    desc: "Registro com 2 linhas por dia",
+    img: m5,
+    ready: true,
+    to: "/processamento/modelo-5",
   },
 ] as const;
 

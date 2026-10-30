@@ -10,14 +10,27 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as UsuariosRouteImport } from './routes/usuarios'
 import { Route as ProcessamentoModelo1RouteImport } from './routes/processamento/modelo-1'
 import { Route as ProcessamentoModelo2RouteImport } from './routes/processamento/modelo-2'
 import { Route as ProcessamentoModelo3RouteImport } from './routes/processamento/modelo-3'
 import { Route as ProcessamentoModelo4RouteImport } from './routes/processamento/modelo-4'
+import { Route as ProcessamentoModelo5RouteImport } from './routes/processamento/modelo-5'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UsuariosRoute = UsuariosRouteImport.update({
+  id: '/usuarios',
+  path: '/usuarios',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProcessamentoModelo1Route = ProcessamentoModelo1RouteImport.update({
@@ -40,59 +53,85 @@ const ProcessamentoModelo4Route = ProcessamentoModelo4RouteImport.update({
   path: '/processamento/modelo-4',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProcessamentoModelo5Route = ProcessamentoModelo5RouteImport.update({
+  id: '/processamento/modelo-5',
+  path: '/processamento/modelo-5',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/usuarios': typeof UsuariosRoute
   '/processamento/modelo-1': typeof ProcessamentoModelo1Route
   '/processamento/modelo-2': typeof ProcessamentoModelo2Route
   '/processamento/modelo-3': typeof ProcessamentoModelo3Route
   '/processamento/modelo-4': typeof ProcessamentoModelo4Route
+  '/processamento/modelo-5': typeof ProcessamentoModelo5Route
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/usuarios': typeof UsuariosRoute
   '/processamento/modelo-1': typeof ProcessamentoModelo1Route
   '/processamento/modelo-2': typeof ProcessamentoModelo2Route
   '/processamento/modelo-3': typeof ProcessamentoModelo3Route
   '/processamento/modelo-4': typeof ProcessamentoModelo4Route
+  '/processamento/modelo-5': typeof ProcessamentoModelo5Route
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/usuarios': typeof UsuariosRoute
   '/processamento/modelo-1': typeof ProcessamentoModelo1Route
   '/processamento/modelo-2': typeof ProcessamentoModelo2Route
   '/processamento/modelo-3': typeof ProcessamentoModelo3Route
   '/processamento/modelo-4': typeof ProcessamentoModelo4Route
+  '/processamento/modelo-5': typeof ProcessamentoModelo5Route
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/login'
+    | '/usuarios'
     | '/processamento/modelo-1'
     | '/processamento/modelo-2'
     | '/processamento/modelo-3'
     | '/processamento/modelo-4'
+    | '/processamento/modelo-5'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/login'
+    | '/usuarios'
     | '/processamento/modelo-1'
     | '/processamento/modelo-2'
     | '/processamento/modelo-3'
     | '/processamento/modelo-4'
+    | '/processamento/modelo-5'
   id:
     | '__root__'
     | '/'
+    | '/login'
+    | '/usuarios'
     | '/processamento/modelo-1'
     | '/processamento/modelo-2'
     | '/processamento/modelo-3'
     | '/processamento/modelo-4'
+    | '/processamento/modelo-5'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  LoginRoute: typeof LoginRoute
+  UsuariosRoute: typeof UsuariosRoute
   ProcessamentoModelo1Route: typeof ProcessamentoModelo1Route
   ProcessamentoModelo2Route: typeof ProcessamentoModelo2Route
   ProcessamentoModelo3Route: typeof ProcessamentoModelo3Route
   ProcessamentoModelo4Route: typeof ProcessamentoModelo4Route
+  ProcessamentoModelo5Route: typeof ProcessamentoModelo5Route
 }
 
 declare module '@tanstack/react-router' {
@@ -102,6 +141,20 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/usuarios': {
+      id: '/usuarios'
+      path: '/usuarios'
+      fullPath: '/usuarios'
+      preLoaderRoute: typeof UsuariosRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/processamento/modelo-1': {
@@ -132,15 +185,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProcessamentoModelo4RouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/processamento/modelo-5': {
+      id: '/processamento/modelo-5'
+      path: '/processamento/modelo-5'
+      fullPath: '/processamento/modelo-5'
+      preLoaderRoute: typeof ProcessamentoModelo5RouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  LoginRoute: LoginRoute,
+  UsuariosRoute: UsuariosRoute,
   ProcessamentoModelo1Route: ProcessamentoModelo1Route,
   ProcessamentoModelo2Route: ProcessamentoModelo2Route,
   ProcessamentoModelo3Route: ProcessamentoModelo3Route,
   ProcessamentoModelo4Route: ProcessamentoModelo4Route,
+  ProcessamentoModelo5Route: ProcessamentoModelo5Route,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

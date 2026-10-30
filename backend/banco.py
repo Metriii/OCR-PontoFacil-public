@@ -84,6 +84,11 @@ def _conectar() -> sqlite3.Connection:
     return conexao
 
 
+def conectar() -> sqlite3.Connection:
+    """Conexao publica para os modulos de autenticacao e auditoria."""
+    return _conectar()
+
+
 def inicializar() -> None:
     """Cria o banco/tabela/indices, sem apagar dados existentes."""
     conexao = _conectar()

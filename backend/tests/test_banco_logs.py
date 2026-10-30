@@ -6,6 +6,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -15,6 +16,7 @@ sys.path.insert(0, str(RAIZ))
 
 from backend import banco, config, logs, servico  # noqa: E402
 from backend.modelos import FolhaProcessada, Registro  # noqa: E402
+from backend.tests.apoio import autenticar  # noqa: E402
 
 
 def _registro(
@@ -379,12 +381,15 @@ class TestLogsDiarios(BaseTemporaria):
 
 
 class TestEndpointsSQLite(BaseTemporaria):
+    @contextmanager
     def _cliente(self):
         from fastapi.testclient import TestClient
 
         from backend.main import app
 
-        return TestClient(app)
+        with TestClient(app) as cliente:
+            autenticar(cliente)
+            yield cliente
 
     def test_processar_persiste_e_registros_consulta(self) -> None:
         folha = _folha()
@@ -399,7 +404,8 @@ class TestEndpointsSQLite(BaseTemporaria):
             resposta = cliente.post(
                 "/processar",
                 files={"arquivos": ("ANA.jpg", b"imagem", "image/jpeg")},
-                data={"modelo": "modelo-1"},
+                data={"modelo": "modelo-1", "aceite_ocr": "true"},
+                headers={"Idempotency-Key": "teste-banco-modelo-1"},
             )
             self.assertEqual(resposta.status_code, 200, resposta.text)
 
@@ -439,7 +445,8 @@ class TestEndpointsSQLite(BaseTemporaria):
             resposta = cliente.post(
                 "/processar",
                 files={"arquivos": ("amanda.jpg", b"imagem", "image/jpeg")},
-                data={"modelo": "modelo-2"},
+                data={"modelo": "modelo-2", "aceite_ocr": "true"},
+                headers={"Idempotency-Key": "teste-banco-modelo-2"},
             )
             self.assertEqual(resposta.status_code, 200, resposta.text)
 
@@ -466,6 +473,8 @@ class TestEndpointsSQLite(BaseTemporaria):
             resposta = cliente.post(
                 "/processar",
                 files={"arquivos": ("ANA.jpg", b"imagem", "image/jpeg")},
+                data={"aceite_ocr": "true"},
+                headers={"Idempotency-Key": "teste-banco-falha"},
             )
             self.assertEqual(resposta.status_code, 500)
 

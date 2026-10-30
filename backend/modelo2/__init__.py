@@ -2,4 +2,4 @@
 
 from __future__ import annotations
 
-__all__ = ["mapper", "parser"]
+__all__ = ["imagem", "mapper", "parser"]

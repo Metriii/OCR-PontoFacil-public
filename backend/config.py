@@ -7,6 +7,7 @@ diretorios de trabalho. Nada aqui deve conter segredo hard-coded.
 from __future__ import annotations
 
 import os
+import secrets
 import shutil
 import sys
 from pathlib import Path
@@ -32,7 +33,7 @@ DIR_LOGS = Path(os.getenv("PONTOFACIL_LOG_DIR", str(RAIZ / "logs")))
 # Fuso usado nos logs e na data de processamento.
 FUSO_HORARIO = os.getenv("PONTOFACIL_TIMEZONE", "America/Sao_Paulo")
 
-MODELOS_VALIDOS = {"modelo-1", "modelo-2", "modelo-3", "modelo-4"}
+MODELOS_VALIDOS = {"modelo-1", "modelo-2", "modelo-3", "modelo-4", "modelo-5"}
 
 # Origens liberadas no CORS (separe por virgula). "*" libera todas (dev).
 CORS_ORIGINS = [
@@ -43,6 +44,9 @@ CORS_ORIGINS = [
 
 # Limite de tamanho por arquivo enviado (bytes). Padrao: 20 MB.
 MAX_ARQUIVO_BYTES = int(os.getenv("PONTOFACIL_MAX_ARQUIVO_MB", "20")) * 1024 * 1024
+
+# Limite total do lote enviado em uma requisicao. Padrao: 80 MB.
+MAX_LOTE_BYTES = int(os.getenv("PONTOFACIL_MAX_LOTE_MB", "80")) * 1024 * 1024
 
 # Imagens menores que isso sao ampliadas antes do OCR (0 desliga).
 LARGURA_MINIMA_OCR = int(os.getenv("PONTOFACIL_OCR_LARGURA_MINIMA", "1200"))
@@ -81,6 +85,58 @@ def _booleano_env(nome: str, padrao: bool) -> bool:
         return padrao
     return valor.strip().lower() not in {"0", "false", "nao", "não", "off", "no"}
 
+
+# ---------------------------------------------------------------------------
+# Ambiente e autenticacao
+# ---------------------------------------------------------------------------
+# "dev" aceita ausencia de SMTP/segredo; "producao" recusa subir inseguro.
+AMBIENTE = os.getenv("PONTOFACIL_AMBIENTE", "dev").strip().lower()
+PRODUCAO = AMBIENTE in {"producao", "production", "prod"}
+
+# Cronometragem do login em duas etapas.
+CODIGO_TTL_MIN = max(1, int(os.getenv("PONTOFACIL_CODIGO_TTL_MIN", "10")))
+CODIGO_MAX_TENTATIVAS = max(1, int(os.getenv("PONTOFACIL_CODIGO_MAX_TENTATIVAS", "5")))
+CODIGO_REENVIO_SEG = max(0, int(os.getenv("PONTOFACIL_CODIGO_REENVIO_SEG", "60")))
+
+# Sessao: inatividade e limite absoluto.
+SESSAO_INATIVIDADE_MIN = max(
+    5, int(os.getenv("PONTOFACIL_SESSAO_INATIVIDADE_MIN", "480"))
+)
+SESSAO_ABSOLUTA_DIAS = max(1, int(os.getenv("PONTOFACIL_SESSAO_ABSOLUTA_DIAS", "7")))
+
+# Limites de tentativa de senha por e-mail e por IP.
+LOGIN_MAX_FALHAS_EMAIL = max(
+    1, int(os.getenv("PONTOFACIL_LOGIN_MAX_FALHAS_EMAIL", "10"))
+)
+LOGIN_MAX_FALHAS_IP = max(1, int(os.getenv("PONTOFACIL_LOGIN_MAX_FALHAS_IP", "30")))
+LOGIN_JANELA_MIN = max(1, int(os.getenv("PONTOFACIL_LOGIN_JANELA_MIN", "15")))
+
+# Cookies. Em producao o padrao e Secure; use PONTOFACIL_COOKIE_SECURE=0 apenas
+# em dev local (http).
+COOKIE_SESSAO = "pontofacil_sessao"
+COOKIE_DESAFIO = "pontofacil_desafio"
+COOKIE_SECURE = _booleano_env("PONTOFACIL_COOKIE_SECURE", PRODUCAO)
+
+# Segredo usado em HMAC (codigos e CSRF). Em dev, se ausente, vale um segredo
+# efemero por processo; em producao o startup recusa.
+SEGREDO_SESSAO = os.getenv("PONTOFACIL_SEGREDO_SESSAO", "").strip()
+_SEGREDO_EFEMERO = secrets.token_urlsafe(48)
+
+# Envio de e-mail: "smtp" (real) ou "arquivo" (somente dev, grava em data/emails).
+EMAIL_MODO = os.getenv(
+    "PONTOFACIL_EMAIL_MODO", "smtp" if PRODUCAO else "arquivo"
+).strip().lower()
+SMTP_HOST = os.getenv("PONTOFACIL_SMTP_HOST", "").strip()
+SMTP_SEGURANCA = os.getenv("PONTOFACIL_SMTP_SEGURANCA", "starttls").strip().lower()
+SMTP_PORTA = int(
+    os.getenv("PONTOFACIL_SMTP_PORTA", "465" if SMTP_SEGURANCA == "ssl" else "587")
+)
+SMTP_USUARIO = os.getenv("PONTOFACIL_SMTP_USUARIO", "").strip()
+SMTP_SENHA = os.getenv("PONTOFACIL_SMTP_SENHA", "")
+SMTP_REMETENTE = os.getenv("PONTOFACIL_SMTP_REMETENTE", "").strip()
+SMTP_TIMEOUT = max(5, int(os.getenv("PONTOFACIL_SMTP_TIMEOUT", "20")))
+
+DIR_EMAILS = Path(os.getenv("PONTOFACIL_EMAIL_DIR", str(DIR_DADOS / "emails")))
 
 # Sincronizacao automatica das planilhas editadas com o SQLite.
 SYNC_EXCEL_ATIVO = _booleano_env("PONTOFACIL_SYNC_ENABLED", True)
@@ -247,3 +303,50 @@ def garantir_diretorios() -> None:
     DIR_DADOS.mkdir(parents=True, exist_ok=True)
     ARQUIVO_BANCO.parent.mkdir(parents=True, exist_ok=True)
     DIR_LOGS.mkdir(parents=True, exist_ok=True)
+    if EMAIL_MODO == "arquivo":
+        DIR_EMAILS.mkdir(parents=True, exist_ok=True)
+
+
+def segredo_sessao() -> str:
+    """Segredo dos HMACs de codigo/CSRF.
+
+    Em desenvolvimento, sem configuracao, um segredo efemero mantem o fluxo
+    funcionando (sessoes caem ao reiniciar). Em producao o startup recusa.
+    """
+    if SEGREDO_SESSAO:
+        return SEGREDO_SESSAO
+    if PRODUCAO:
+        raise RuntimeError(
+            "PONTOFACIL_SEGREDO_SESSAO nao configurado; obrigatorio em producao."
+        )
+    return _SEGREDO_EFEMERO
+
+
+def validar_ambiente() -> None:
+    """Recusa combinacoes inseguras quando PONTOFACIL_AMBIENTE=producao."""
+    if not PRODUCAO:
+        return
+
+    problemas: list[str] = []
+    if "*" in CORS_ORIGINS:
+        problemas.append("PONTOFACIL_CORS_ORIGINS nao pode ser '*' em producao")
+    if not SEGREDO_SESSAO:
+        problemas.append("PONTOFACIL_SEGREDO_SESSAO nao configurado")
+    if not COOKIE_SECURE:
+        problemas.append("PONTOFACIL_COOKIE_SECURE deve ser 1 em producao")
+    if EMAIL_MODO != "smtp":
+        problemas.append("PONTOFACIL_EMAIL_MODO deve ser 'smtp' em producao")
+    if not SMTP_HOST:
+        problemas.append("PONTOFACIL_SMTP_HOST nao configurado")
+    if EMAIL_MODO == "smtp":
+        if not (SMTP_REMETENTE or SMTP_USUARIO):
+            problemas.append("PONTOFACIL_SMTP_REMETENTE nao configurado")
+        if SMTP_SEGURANCA not in {"starttls", "ssl"}:
+            problemas.append(
+                "PONTOFACIL_SMTP_SEGURANCA deve ser 'starttls' ou 'ssl' em producao"
+            )
+
+    if problemas:
+        raise RuntimeError(
+            "Configuracao de producao invalida: " + "; ".join(problemas) + "."
+        )

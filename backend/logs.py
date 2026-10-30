@@ -45,6 +45,8 @@ def registrar(
     componente: str,
     mensagem: str,
     lote: str | None = None,
+    usuario: str | None = None,
+    modelo: str | None = None,
 ) -> bool:
     """Acrescenta uma entrada ao log do dia. Retorna False em caso de falha."""
     nivel = (nivel or "INFO").upper()
@@ -52,15 +54,28 @@ def registrar(
         nivel = "INFO"
 
     momento = agora()
-    linha = (
-        f"{momento:%Y-%m-%d %H:%M:%S} | {nivel} | "
-        f"{sanitizar(componente, 80) or '-'} | "
-        f"{sanitizar(mensagem) or '-'}"
-    )
+
+    partes = [
+        f"{momento:%Y-%m-%d %H:%M:%S}",
+        nivel,
+        sanitizar(componente, 80) or "-",
+    ]
+
+    if usuario:
+        partes.append(f"Usuário: {sanitizar(usuario, 120)}")
+
+    if modelo:
+        partes.append(f"Modelo: {sanitizar(modelo, 80)}")
+
+    partes.append(sanitizar(mensagem) or "-")
+
+    linha = " | ".join(partes)
+
     if lote:
         linha = f"{linha} | lote={sanitizar(lote, 80)}"
 
     caminho = config.DIR_LOGS / f"{momento:%Y-%m-%d}.txt"
+
     try:
         config.DIR_LOGS.mkdir(parents=True, exist_ok=True)
         with _LOCK:
@@ -71,18 +86,41 @@ def registrar(
         _LOG.warning("Falha ao gravar log em %s: %s", caminho, exc)
         return False
 
-
-def debug(componente: str, mensagem: str, lote: str | None = None) -> bool:
-    return registrar("DEBUG", componente, mensagem, lote)
-
-
-def info(componente: str, mensagem: str, lote: str | None = None) -> bool:
-    return registrar("INFO", componente, mensagem, lote)
-
-
-def warning(componente: str, mensagem: str, lote: str | None = None) -> bool:
-    return registrar("WARNING", componente, mensagem, lote)
+def debug(
+    componente: str,
+    mensagem: str,
+    lote: str | None = None,
+    usuario: str | None = None,
+    modelo: str | None = None,
+) -> bool:
+    return registrar("DEBUG", componente, mensagem, lote, usuario, modelo)
 
 
-def error(componente: str, mensagem: str, lote: str | None = None) -> bool:
-    return registrar("ERROR", componente, mensagem, lote)
+def info(
+    componente: str,
+    mensagem: str,
+    lote: str | None = None,
+    usuario: str | None = None,
+    modelo: str | None = None,
+) -> bool:
+    return registrar("INFO", componente, mensagem, lote, usuario, modelo)
+
+
+def warning(
+    componente: str,
+    mensagem: str,
+    lote: str | None = None,
+    usuario: str | None = None,
+    modelo: str | None = None,
+) -> bool:
+    return registrar("WARNING", componente, mensagem, lote, usuario, modelo)
+
+
+def error(
+    componente: str,
+    mensagem: str,
+    lote: str | None = None,
+    usuario: str | None = None,
+    modelo: str | None = None,
+) -> bool:
+    return registrar("ERROR", componente, mensagem, lote, usuario, modelo)

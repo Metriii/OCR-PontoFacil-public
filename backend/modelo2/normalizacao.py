@@ -21,9 +21,20 @@ OBSERVACAO_AJUSTE_MEDIANA = (
 OBSERVACAO_CAMPO_REMOVIDO = (
     "Horario removido automaticamente para revisao."
 )
+OBSERVACAO_SAIDA_CORRIGIDA = (
+    "Sa\u00edda {antiga} corrigida para {nova} (leitura 14/17)."
+)
+OBSERVACAO_SAIDA_AMBIGUA = (
+    "Sa\u00edda {valor} preservada; conferir se \u00e9 14:xx ou 17:xx."
+)
 
 LIMIAR_INVERSAO_CURTA = 5
 LIMIAR_INTERVALO = 150
+LIMIAR_TARDE_CURTA = 60
+LIMIAR_JORNADA_CURTA = 16 * 60
+PROPORCAO_SAIDA_14 = 0.6
+MINIMO_SAIDAS_SISTEMATICAS = 3
+HORA_SAIDA_CORRIGIDA = 17
 
 
 def _minutos(valor: str | None) -> int | None:
@@ -247,6 +258,140 @@ def _remover_por_mediana(
     return candidato, indice
 
 
+def _saida_14(valor: str | None) -> bool:
+    return bool(valor) and valor.startswith("14:")
+
+
+def _candidato_saida_17(valor: str) -> str | None:
+    minutos = _minutos(valor)
+    if minutos is None:
+        return None
+    return _hora(HORA_SAIDA_CORRIGIDA * 60 + minutos % 60)
+
+
+def _tarde_curta(campos: CamposLinha) -> bool:
+    """Indica que a saida 14:xx e improvavel para a tarde da linha."""
+    saida = _minutos(campos.saida)
+    if saida is None:
+        return False
+    volta = _minutos(campos.volta_almoco)
+    if volta is not None and saida - volta < LIMIAR_TARDE_CURTA:
+        return True
+    saida_almoco = _minutos(campos.saida_almoco)
+    return saida_almoco is not None and saida <= saida_almoco
+
+
+def _com_observacao(campos: CamposLinha, observacao: str) -> CamposLinha:
+    return replace(
+        campos,
+        ajuste=_combinar_observacao(campos.ajuste, observacao),
+        forcar_revisao=True,
+    )
+
+
+def _com_saida_corrigida(
+    campos: CamposLinha, nova_saida: str, observacao: str
+) -> CamposLinha:
+    return replace(
+        campos,
+        saida=nova_saida,
+        ajuste=_combinar_observacao(campos.ajuste, observacao),
+        forcar_revisao=True,
+    )
+
+
+def _corrigir_saidas_14(
+    campos: list[CamposLinha],
+    jornada: JornadaPrevista | None,
+    dias_uteis: set[str] | None,
+) -> list[CamposLinha]:
+    """Trata a confusao de caligrafia 17:xx -> 14:xx sem inventar horarios.
+
+    A troca so acontece quando ha evidencia:
+    - a folha e de jornada completa (saida prevista a partir das 16:00);
+    - a linha e de dia util e nao tem anotacao;
+    - a maioria dos dias uteis tambem esta em 14:xx (leitura sistematica), ou
+      a tarde da linha seria curta/impossivel e a folha ja registra 17:xx em
+      outro dia util (o horario existe na letra do funcionario).
+
+    Um 14:xx isolado e plausivel e preservado, apenas marcado para revisao.
+    """
+    if not dias_uteis:
+        return campos
+
+    candidatos = [
+        indice
+        for indice, campos_linha in enumerate(campos)
+        if campos_linha.dia in dias_uteis
+        and not campos_linha.observacao
+        and _saida_14(campos_linha.saida)
+    ]
+    if not candidatos:
+        return campos
+
+    saidas_uteis = [
+        campos_linha
+        for campos_linha in campos
+        if campos_linha.dia in dias_uteis
+        and not campos_linha.observacao
+        and campos_linha.saida
+    ]
+
+    saida_prevista = _minutos(jornada.saida) if jornada else None
+    if saida_prevista is None:
+        # Sem jornada confiavel: nao adivinha, apenas sinaliza.
+        corrigidos = list(campos)
+        for indice in candidatos:
+            corrigidos[indice] = _com_observacao(
+                campos[indice],
+                OBSERVACAO_SAIDA_AMBIGUA.format(
+                    valor=campos[indice].saida
+                ),
+            )
+        return corrigidos
+
+    if saida_prevista < LIMIAR_JORNADA_CURTA:
+        # Jornada curta: 14:xx e esperado.
+        return campos
+
+    sistematico = (
+        len(saidas_uteis) >= MINIMO_SAIDAS_SISTEMATICAS
+        and sum(1 for linha in saidas_uteis if _saida_14(linha.saida))
+        / len(saidas_uteis)
+        >= PROPORCAO_SAIDA_14
+    )
+    ha_saida_17 = any(linha.saida.startswith("17:") for linha in saidas_uteis)
+
+    corrigidos = list(campos)
+    for indice in candidatos:
+        campos_linha = campos[indice]
+        valor = campos_linha.saida
+        candidato = _candidato_saida_17(valor)
+        if candidato is None:
+            continue
+        volta = _minutos(campos_linha.volta_almoco)
+        if volta is not None and (_minutos(candidato) or 0) <= volta:
+            corrigidos[indice] = _com_observacao(
+                campos_linha,
+                OBSERVACAO_SAIDA_AMBIGUA.format(valor=valor),
+            )
+            continue
+        if sistematico or (_tarde_curta(campos_linha) and ha_saida_17):
+            corrigidos[indice] = _com_saida_corrigida(
+                campos_linha,
+                candidato,
+                OBSERVACAO_SAIDA_CORRIGIDA.format(
+                    antiga=valor, nova=candidato
+                ),
+            )
+        else:
+            corrigidos[indice] = _com_observacao(
+                campos_linha,
+                OBSERVACAO_SAIDA_AMBIGUA.format(valor=valor),
+            )
+    return corrigidos
+
+
 def _reparar(
     campos: CamposLinha,
     medias: tuple[int, int, int, int] | None,
@@ -291,12 +436,14 @@ def _reparar(
 def normalizar_folha(
     campos: list[CamposLinha],
     jornada: JornadaPrevista | None = None,
+    dias_uteis: set[str] | None = None,
 ) -> list[CamposLinha]:
     """Recupera entradas omitidas e repara sequencias impossiveis da folha."""
-    entradas_validas = _entradas_validas(campos)
+    corrigidos = _corrigir_saidas_14(campos, jornada, dias_uteis)
+    entradas_validas = _entradas_validas(corrigidos)
     recuperados = [
         _recuperar_entrada(campos_linha, jornada, entradas_validas)
-        for campos_linha in campos
+        for campos_linha in corrigidos
     ]
     medias = _medianas(recuperados)
     return [_reparar(campos_linha, medias) for campos_linha in recuperados]

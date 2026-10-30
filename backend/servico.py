@@ -14,6 +14,7 @@ from typing import Any, Callable
 
 from . import config, logs, mcp_client, parser
 from .mapper import map_registro
+from .modelo2 import imagem as modelo2_imagem
 from .modelo2 import mapper as modelo2_mapper
 from .modelo2 import parser as modelo2_parser
 from .modelo3 import mapper as modelo3_mapper
@@ -21,6 +22,9 @@ from .modelo3 import parser as modelo3_parser
 from .modelo4 import imagem as modelo4_imagem
 from .modelo4 import mapper as modelo4_mapper
 from .modelo4 import parser as modelo4_parser
+from .modelo5 import imagem as modelo5_imagem
+from .modelo5 import mapper as modelo5_mapper
+from .modelo5 import parser as modelo5_parser
 from .modelos import FolhaProcessada
 
 log = logging.getLogger("pontofacil")
@@ -46,6 +50,8 @@ class _Fluxo:
     preparar_imagem: Callable[[bytes], bytes] | None = None
     diagnostico: Callable[[list[list[str]], str], str] | None = None
     avisos_estrutura: Callable[[list[list[str]]], list[str]] | None = None
+    validar_layout: Callable[[list[list[str]], str], str | None] | None = None
+    salvar_ocr_sem_grid: bool = False
 
 
 _FLUXO_MODELO1 = _Fluxo(
@@ -67,6 +73,7 @@ _FLUXO_MODELO2 = _Fluxo(
     aceitar_sem_registros=True,
     jornada_prevista=modelo2_parser.jornada_prevista,
     map_folha=modelo2_mapper.mapear_folha,
+    preparar_imagem=modelo2_imagem.preparar_imagem,
 )
 
 _FLUXO_MODELO3 = _Fluxo(
@@ -86,10 +93,26 @@ _FLUXO_MODELO4 = _Fluxo(
     linhas_dia=modelo4_parser.linhas_dia,
     map_registro=modelo4_mapper.map_registro,
     manter_registro=modelo4_mapper.registro_tem_conteudo,
-    map_folha=modelo4_mapper.mapear_folha,
+    map_folha=modelo4_mapper.mapear_folha_linha_unica,
     preparar_imagem=modelo4_imagem.preparar_imagem,
     diagnostico=modelo4_parser.diagnostico,
     avisos_estrutura=modelo4_parser.avisos_estrutura,
+    validar_layout=modelo4_parser.validar_layout,
+)
+
+_FLUXO_MODELO5 = _Fluxo(
+    selecionar_grid=modelo5_parser.selecionar_grid,
+    nome_colaborador=modelo5_parser.nome_colaborador,
+    referencia=modelo5_parser.referencia,
+    linhas_dia=modelo5_parser.linhas_dia,
+    map_registro=modelo5_mapper.map_registro,
+    manter_registro=modelo5_mapper.registro_tem_conteudo,
+    map_folha=modelo5_mapper.mapear_folha,
+    preparar_imagem=modelo5_imagem.preparar_imagem,
+    diagnostico=modelo5_parser.diagnostico,
+    avisos_estrutura=modelo5_parser.avisos_estrutura,
+    validar_layout=modelo5_parser.validar_layout,
+    salvar_ocr_sem_grid=True,
 )
 
 
@@ -252,7 +275,22 @@ def _processar_markdown(
             f"Imagem {indice}/{total} sem folha reconhecida",
             lote,
         )
+        if fluxo.salvar_ocr_sem_grid:
+            salvo = _salvar_markdown_ocr(markdown, nome, lote)
+            if salvo is not None:
+                logs.info("OCR", f"OCR bruto salvo em {salvo}", lote)
         return None, [f'Nenhuma folha de ponto reconhecida em "{nome}".']
+
+    if fluxo.validar_layout is not None:
+        motivo = fluxo.validar_layout(grid, markdown)
+        if motivo:
+            logs.warning(
+                "OCR",
+                f"Imagem {indice}/{total} recusada: {motivo}",
+                lote,
+            )
+            _salvar_markdown_ocr(markdown, nome, lote)
+            return None, [f'"{nome}": {motivo}']
 
     funcionario = fluxo.nome_colaborador(grid, markdown)
     referencia = fluxo.referencia(grid, markdown)
@@ -407,5 +445,13 @@ async def processar_folhas_modelo4(
     imagens: list[tuple[str, bytes]],
     lote: str | None = None,
 ) -> tuple[list[FolhaProcessada], list[str]]:
-    """Executa o pipeline do registro mensal com duas linhas por dia (Modelo 4)."""
+    """Executa o pipeline do cartao quinzenal (Modelo 4)."""
     return await _processar_com(imagens, lote, _FLUXO_MODELO4)
+
+
+async def processar_folhas_modelo5(
+    imagens: list[tuple[str, bytes]],
+    lote: str | None = None,
+) -> tuple[list[FolhaProcessada], list[str]]:
+    """Executa o pipeline do registro com duas linhas por data (Modelo 5)."""
+    return await _processar_com(imagens, lote, _FLUXO_MODELO5)

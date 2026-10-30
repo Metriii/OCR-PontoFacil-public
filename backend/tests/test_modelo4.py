@@ -1,4 +1,4 @@
-"""Testes do Modelo 4: registro mensal com duas linhas por dia."""
+"""Testes do Modelo 4: cartao quinzenal com uma linha por dia (layout B)."""
 
 from __future__ import annotations
 
@@ -115,129 +115,6 @@ ALEXANDRE_MARKDOWN = _tabela(
 ALEXANDRE_REFERENCIA = "01/09/2026 a 15/09/2026"
 
 
-def _map(linha: list[str], indice: int = 0, referencia: str | None = REFERENCIA):
-    return mapper.map_registro(linha, indice, referencia, "Cristiano")
-
-
-class TestParserModelo4(unittest.TestCase):
-    def test_seleciona_tabela_e_conta_linhas_com_data(self) -> None:
-        grid = parser.selecionar_grid(MARKDOWN)
-        self.assertIsNotNone(grid)
-        assert grid is not None
-        self.assertEqual(len(parser.linhas_dia(grid)), len(LINHAS))
-
-    def test_identifica_nome_e_periodo(self) -> None:
-        grid = parser.selecionar_grid(MARKDOWN)
-        assert grid is not None
-        self.assertEqual(parser.nome_colaborador(grid, MARKDOWN), "Cristiano")
-        self.assertEqual(parser.referencia(grid, MARKDOWN), REFERENCIA)
-
-    def test_linha_com_data_e_horarios_separados_por_barra(self) -> None:
-        campos = separar_linha(LINHAS[0])
-        assert campos is not None
-        self.assertEqual((campos.dia, campos.mes, campos.ano), (2, 9, 2026))
-        self.assertEqual(campos.horas, ("08:06", "12:07"))
-
-    def test_feriado_e_reconhecido_sem_confundir_assinatura(self) -> None:
-        feriado = separar_linha(["07", "09", "26", "Fructo", "", "fructo", ""])
-        assert feriado is not None
-        self.assertEqual(feriado.observacao, "Feriado")
-        self.assertEqual(feriado.horas, ())
-
-        normal = separar_linha(
-            ["02", "09", "26", "Estrutivo", "08/06", "Estrutivo", "12/07"]
-        )
-        assert normal is not None
-        self.assertEqual(normal.observacao, "")
-        self.assertEqual(normal.horas, ("08:06", "12:07"))
-
-    def test_corrige_data_repetida_apos_feriado(self) -> None:
-        feriado = CamposLinha(7, 9, 2026, (), observacao="Feriado")
-        trabalho = CamposLinha(7, 9, 2026, ("08:08", "12:06"))
-        corrigidos = parser.corrigir_datas_apos_feriado([feriado, trabalho])
-        self.assertEqual(corrigidos[1].dia, 8)
-        self.assertTrue(corrigidos[1].forcar_revisao)
-        self.assertIn("dia seguinte ao feriado", corrigidos[1].ajuste)
-
-    def test_herda_data_de_linha_de_continuacao(self) -> None:
-        primeira = CamposLinha(2, 9, 2026, ("08:06", "12:07"))
-        segunda = CamposLinha(None, None, None, ("13:07", "17:05"))
-        preenchidas = parser.preencher_datas([primeira, segunda])
-        self.assertEqual((preenchidas[1].dia, preenchidas[1].mes), (2, 9))
-        self.assertTrue(preenchidas[1].forcar_revisao)
-
-
-class TestMapperModelo4(unittest.TestCase):
-    def _mapear(self):
-        grid = parser.selecionar_grid(MARKDOWN)
-        assert grid is not None
-        linhas = parser.linhas_dia(grid)
-        return mapper.mapear_folha(linhas, REFERENCIA, "Cristiano")
-
-    def test_agrupa_duas_linhas_por_data_e_usa_somente_o_dia(self) -> None:
-        registros, _ = self._mapear()
-        self.assertEqual([registro.data for registro in registros], ["2", "5", "7", "8", "16", "17"])
-        self.assertEqual(registros[0].dia_semana, DIAS_PT[2])
-        self.assertEqual(
-            (
-                registros[0].entrada,
-                registros[0].saida_almoco,
-                registros[0].volta_almoco,
-                registros[0].saida,
-            ),
-            ("08:06", "12:07", "13:07", "17:05"),
-        )
-        self.assertEqual(registros[0].confianca, 1.0)
-        self.assertFalse(registros[0].revisar)
-
-    def test_dia_curto_tem_duas_batidas_e_revisao(self) -> None:
-        registros, linhas_excel = self._mapear()
-        dia_5 = registros[1]
-        self.assertEqual(
-            (dia_5.entrada, dia_5.saida_almoco, dia_5.volta_almoco, dia_5.saida),
-            ("08:00", "13:08", None, None),
-        )
-        self.assertEqual(dia_5.confianca, 0.5)
-        self.assertTrue(dia_5.revisar)
-        self.assertEqual(linhas_excel[1][5], "05:08")
-
-    def test_feriado_aparece_no_excel_sem_horarios(self) -> None:
-        registros, linhas_excel = self._mapear()
-        feriado = registros[2]
-        self.assertEqual(feriado.observacao, "Feriado")
-        self.assertTrue(feriado.revisar)
-        self.assertEqual(feriado.entrada, None)
-        self.assertEqual(
-            linhas_excel[2],
-            ["07 - segunda-feira (Feriado)", "", "", "", "", ""],
-        )
-
-    def test_data_do_dia_seguinte_ao_feriado_e_corrigida(self) -> None:
-        registros, _ = self._mapear()
-        dia_8 = registros[3]
-        self.assertEqual(dia_8.data, "8")
-        self.assertEqual(dia_8.dia_semana, DIAS_PT[1])
-        self.assertTrue(dia_8.revisar)
-        self.assertIn("Data ajustada", dia_8.observacao or "")
-        self.assertEqual(
-            (dia_8.entrada, dia_8.saida_almoco, dia_8.volta_almoco, dia_8.saida),
-            ("08:08", "12:06", "13:05", "17:02"),
-        )
-
-    def test_excel_tem_seis_colunas_e_hora_total(self) -> None:
-        _, linhas_excel = self._mapear()
-        self.assertEqual(len(linhas_excel), 6)
-        self.assertTrue(all(len(linha) == 6 for linha in linhas_excel))
-        self.assertEqual(linhas_excel[0][0], "02 - quarta-feira")
-        self.assertEqual(linhas_excel[0][5], "07:59")
-
-    def test_map_registro_de_uma_linha_nao_quebra(self) -> None:
-        registro, linha_excel = _map(LINHAS[0])
-        self.assertEqual(registro.data, "2")
-        self.assertEqual(registro.entrada, "08:06")
-        self.assertEqual(len(linha_excel), 6)
-
-
 class TestLayoutLinhaUnicaModelo4(unittest.TestCase):
     def _grid(self) -> list[list[str]]:
         grid = parser.selecionar_grid(ALEXANDRE_MARKDOWN)
@@ -247,13 +124,6 @@ class TestLayoutLinhaUnicaModelo4(unittest.TestCase):
     def test_detecta_layout_de_linha_unica(self) -> None:
         self.assertEqual(
             parser.detectar_layout(self._grid()), parser.LAYOUT_LINHA_UNICA
-        )
-
-    def test_layout_original_continua_sendo_detectado(self) -> None:
-        grid = parser.selecionar_grid(MARKDOWN)
-        assert grid is not None
-        self.assertEqual(
-            parser.detectar_layout(grid), parser.LAYOUT_DUAS_LINHAS
         )
 
     def test_referencia_vem_do_cabecalho_e_da_quinzena(self) -> None:
@@ -307,6 +177,37 @@ class TestLayoutLinhaUnicaModelo4(unittest.TestCase):
         self.assertIsNone(
             parser.separar_linha(ALEXANDRE_DIAS[4], mes=9, ano=2026)
         )
+
+
+class TestValidacaoLayoutModelo4(unittest.TestCase):
+    def test_aceita_cartao_quinzenal(self) -> None:
+        grid = parser.selecionar_grid(ALEXANDRE_MARKDOWN)
+        assert grid is not None
+        self.assertEqual(
+            parser.layout_evidente(grid, ALEXANDRE_MARKDOWN),
+            parser.LAYOUT_LINHA_UNICA,
+        )
+        self.assertIsNone(parser.validar_layout(grid, ALEXANDRE_MARKDOWN))
+
+    def test_recusa_cartao_de_duas_linhas_do_modelo_5(self) -> None:
+        grid = parser.selecionar_grid(MARKDOWN)
+        assert grid is not None
+        self.assertEqual(
+            parser.layout_evidente(grid, MARKDOWN),
+            parser.LAYOUT_DUAS_LINHAS,
+        )
+        motivo = parser.validar_layout(grid, MARKDOWN)
+        assert motivo is not None
+        self.assertIn("Modelo 5", motivo)
+
+    def test_cabecalho_ambiguo_nao_e_recusado(self) -> None:
+        ambiguo = _tabela(
+            [["02", "09", "26", "Crusting", "08:06", "Crusting", "12:07"]]
+        )
+        grid = parser.selecionar_grid(ambiguo)
+        assert grid is not None
+        self.assertIsNone(parser.layout_evidente(grid, ambiguo))
+        self.assertIsNone(parser.validar_layout(grid, ambiguo))
 
 
 class TestMapperLinhaUnicaModelo4(unittest.TestCase):
@@ -499,15 +400,6 @@ class TestColunasLinhaUnicaModelo4(unittest.TestCase):
         self.assertEqual(linhas[0][0], "16 - quarta-feira")
         self.assertEqual(linhas[4][0], "20 - domingo")
         self.assertEqual(linhas[-1][0], "30 - quarta-feira")
-
-    def test_cartao_mensal_continua_so_com_dias_preenchidos(self) -> None:
-        grid = parser.selecionar_grid(MARKDOWN)
-        assert grid is not None
-        _, linhas = mapper.mapear_folha(
-            parser.linhas_dia(grid), REFERENCIA, "Cristiano"
-        )
-        self.assertEqual(len(linhas), 6)
-        self.assertEqual(linhas[0][0], "02 - quarta-feira")
 
 
 class TestImagemModelo4(unittest.TestCase):
@@ -822,7 +714,7 @@ class TestAvisosEstruturaModelo4(unittest.TestCase):
 
 
 class TestPipelineModelo4(unittest.IsolatedAsyncioTestCase):
-    async def test_processa_registro_mensal_com_ocr_simulado(self) -> None:
+    async def test_processa_cartao_quinzenal_com_ocr_simulado(self) -> None:
         from backend import config, servico
         from backend.modelo4 import imagem as modelo4_imagem
 
@@ -834,6 +726,38 @@ class TestPipelineModelo4(unittest.IsolatedAsyncioTestCase):
 
         async def ocr_falso(_sessao, _dados, preparar=None):
             preparadores.append(preparar)
+            return ALEXANDRE_MARKDOWN
+
+        with tempfile.TemporaryDirectory() as pasta:
+            raiz = Path(pasta)
+            with (
+                patch.object(config, "DIR_LOGS", raiz / "logs"),
+                patch.object(servico.mcp_client, "abrir_mcp", abrir_falso),
+                patch.object(servico.mcp_client, "ocr_imagem", ocr_falso),
+            ):
+                folhas, avisos = await servico.processar_folhas_modelo4(
+                    [("alexandre.jpg", b"imagem")]
+                )
+
+        self.assertEqual(avisos, [])
+        self.assertEqual(len(folhas), 1)
+        folha = folhas[0]
+        self.assertEqual(folha.referencia, ALEXANDRE_REFERENCIA)
+        self.assertEqual(len(folha.registros), 4)
+        # Cartao quinzenal lista os 15 dias, inclusive os vazios.
+        self.assertEqual(len(folha.linhas_excel), 15)
+        self.assertEqual(preparadores, [modelo4_imagem.preparar_imagem])
+
+    async def test_pipeline_recusa_cartao_de_duas_linhas_do_modelo_5(
+        self,
+    ) -> None:
+        from backend import config, servico
+
+        @asynccontextmanager
+        async def abrir_falso():
+            yield object()
+
+        async def ocr_falso(_sessao, _dados, preparar=None):
             return MARKDOWN
 
         with tempfile.TemporaryDirectory() as pasta:
@@ -847,15 +771,9 @@ class TestPipelineModelo4(unittest.IsolatedAsyncioTestCase):
                     [("cristiano.jpg", b"imagem")]
                 )
 
-        self.assertEqual(avisos, [])
-        self.assertEqual(len(folhas), 1)
-        folha = folhas[0]
-        self.assertEqual(folha.nome, "Cristiano")
-        self.assertEqual(folha.referencia, REFERENCIA)
-        self.assertEqual(len(folha.registros), 6)
-        self.assertEqual(len(folha.linhas_excel), 6)
-        self.assertEqual(len(folha.origem_hash or ""), 64)
-        self.assertEqual(preparadores, [modelo4_imagem.preparar_imagem])
+        self.assertEqual(folhas, [])
+        self.assertEqual(len(avisos), 1)
+        self.assertIn("Modelo 5", avisos[0])
 
 
 class TestEndpointModelo4(unittest.TestCase):
@@ -868,6 +786,7 @@ class TestEndpointModelo4(unittest.TestCase):
             from backend import config, servico
             from backend.main import app
             from backend.modelos import FolhaProcessada, Registro
+            from backend.tests.apoio import autenticar
         except ModuleNotFoundError as exc:
             if exc.name != "mcp":
                 raise
@@ -913,9 +832,11 @@ class TestEndpointModelo4(unittest.TestCase):
                 patch.object(config, "SYNC_EXCEL_ATIVO", False),
             ):
                 with TestClient(app) as cliente:
+                    autenticar(cliente)
                     resposta = cliente.post(
                         "/processar",
-                        data={"modelo": "modelo-4"},
+                        data={"modelo": "modelo-4", "aceite_ocr": "true"},
+                        headers={"Idempotency-Key": "teste-modelo-4"},
                         files={"arquivos": ("cristiano.jpg", b"imagem", "image/jpeg")},
                     )
 
