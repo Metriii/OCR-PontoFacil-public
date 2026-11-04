@@ -35,7 +35,9 @@ router = APIRouter(tags=["processamento"])
 
 _INVALIDOS = re.compile(r"[\\/?*\[\]:\"<>|]+")
 _ARQUIVO_NO_AVISO = re.compile(r'"([^"]+)"')
-_LOCK_PROCESSAMENTO = threading.Lock()
+_SEMAFORO_PROCESSAMENTO = threading.BoundedSemaphore(
+    config.MAX_CHAMADOS_SIMULTANEOS
+)
 
 
 def _estruturar_avisos(avisos: list[str]) -> list[AvisoProcessamento]:
@@ -279,15 +281,19 @@ async def processar(
             modelo=modelo,
         )
 
-        if not _LOCK_PROCESSAMENTO.acquire(blocking=False):
+        if not _SEMAFORO_PROCESSAMENTO.acquire(blocking=False):
             logs.warning(
                 "API",
-                "Lote rejeitado: ja existe um processamento em andamento",
+                "Lote rejeitado: limite de chamados simultaneos atingido",
                 lote,
             )
             raise HTTPException(
                 status_code=409,
-                detail="Ja existe um processamento em andamento. Aguarde terminar.",
+                detail=(
+                    "O sistema ja esta processando o numero maximo de chamados "
+                    f"({config.MAX_CHAMADOS_SIMULTANEOS}). "
+                    "Tente novamente em instantes."
+                ),
             )
 
         try:
@@ -342,7 +348,7 @@ async def processar(
 
             resultado = await _executar_processamento(imagens, modelo, lote, nome_usuario, avisos)
         finally:
-            _LOCK_PROCESSAMENTO.release()
+            _SEMAFORO_PROCESSAMENTO.release()
 
         resultado.processing_id = processing_id
         processamentos.concluir(processing_id)

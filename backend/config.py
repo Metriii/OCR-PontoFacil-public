@@ -1,4 +1,4 @@
-"""Configuracao do backend PontoFácil.
+"""Configuracao do backend PontoFacil.
 
 Resolve token do AI Studio, modelo/fonte do PaddleOCR, o executavel `uvx` e os
 diretorios de trabalho. Nada aqui deve conter segredo hard-coded.
@@ -12,8 +12,11 @@ import shutil
 import sys
 from pathlib import Path
 
-# Raiz do projeto = pasta acima de backend/
+from dotenv import load_dotenv
+
+# Carrega as variaveis do .env localizado na raiz do projeto.
 RAIZ = Path(__file__).resolve().parent.parent
+load_dotenv(RAIZ / ".env")
 
 ARQUIVO_TOKEN = RAIZ / "token.txt"
 
@@ -48,6 +51,11 @@ MAX_ARQUIVO_BYTES = int(os.getenv("PONTOFACIL_MAX_ARQUIVO_MB", "20")) * 1024 * 1
 # Limite total do lote enviado em uma requisicao. Padrao: 80 MB.
 MAX_LOTE_BYTES = int(os.getenv("PONTOFACIL_MAX_LOTE_MB", "80")) * 1024 * 1024
 
+# Chamados processados ao mesmo tempo. 1 reproduz o comportamento serial.
+MAX_CHAMADOS_SIMULTANEOS = max(
+    1, min(8, int(os.getenv("PONTOFACIL_MAX_CHAMADOS", "2")))
+)
+
 # Imagens menores que isso sao ampliadas antes do OCR (0 desliga).
 LARGURA_MINIMA_OCR = int(os.getenv("PONTOFACIL_OCR_LARGURA_MINIMA", "1200"))
 
@@ -64,7 +72,7 @@ ESPERA_RETRY_OCR = max(0.0, float(os.getenv("PONTOFACIL_OCR_RETRY_ESPERA", "10")
 def _concorrencia_ocr(valor: str | int | None = None) -> int:
     """Le e limita as chamadas de OCR simultaneas por lote."""
     bruto = valor if valor is not None else os.getenv(
-        "PONTOFACIL_OCR_CONCORRENCIA", "5"
+        "PONTOFACIL_OCR_CONCORRENCIA", "10"
     )
     try:
         numero = int(bruto)
@@ -72,7 +80,7 @@ def _concorrencia_ocr(valor: str | int | None = None) -> int:
         raise RuntimeError(
             "PONTOFACIL_OCR_CONCORRENCIA deve ser um numero inteiro."
         ) from exc
-    return max(1, min(8, numero))
+    return max(1, min(10, numero))
 
 
 # Chamadas de OCR simultaneas por lote. 1 reproduz o comportamento sequencial.

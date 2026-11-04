@@ -101,7 +101,7 @@ export function PlanilhaPreviewDialog({
                     aria-selected={indice === abaAtiva}
                     onClick={() => setAbaAtiva(indice)}
                     className={cn(
-                      "shrink-0 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                      "flex h-9 w-32 shrink-0 items-center justify-center truncate rounded-md px-3 text-sm font-medium transition-colors",
                       indice === abaAtiva
                         ? "bg-primary text-primary-foreground"
                         : "bg-muted text-foreground hover:bg-primary-soft",

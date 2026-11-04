@@ -155,6 +155,70 @@ class TestLoginAPI(unittest.TestCase):
             historico = cliente.get("/registros")
             self.assertEqual(historico.status_code, 200)
 
+    def test_cookie_de_sessao_nao_persiste_ao_fechar_o_navegador(self) -> None:
+        enviados, patch_envio = capturar_envios()
+        with ambiente() as (cliente, _):
+            criar_usuario()
+            with patch_envio:
+                cliente.post(
+                    "/auth/login",
+                    json={"email": "pessoa@empresa.com", "senha": SENHA},
+                )
+            codigo = enviados[0][1]
+            verificacao = cliente.post("/auth/verificar", json={"codigo": codigo})
+
+        self.assertEqual(verificacao.status_code, 200, verificacao.text)
+        cookies = verificacao.headers.get_list("set-cookie")
+        sessao = next(
+            cookie
+            for cookie in cookies
+            if cookie.startswith(f"{config.COOKIE_SESSAO}=")
+        )
+        self.assertNotIn("Max-Age", sessao)
+        self.assertNotIn("Expires", sessao)
+        self.assertIn("HttpOnly", sessao)
+        self.assertIn("SameSite=lax", sessao)
+        self.assertIn("Path=/", sessao)
+
+    def test_logout_revoga_a_sessao_e_limpa_o_cookie(self) -> None:
+        enviados, patch_envio = capturar_envios()
+        with ambiente() as (cliente, _):
+            criar_usuario()
+            with patch_envio:
+                cliente.post(
+                    "/auth/login",
+                    json={"email": "pessoa@empresa.com", "senha": SENHA},
+                )
+            codigo = enviados[0][1]
+            verificacao = cliente.post("/auth/verificar", json={"codigo": codigo})
+            csrf = verificacao.json()["csrf_token"]
+            token = cliente.cookies.get(config.COOKIE_SESSAO)
+
+            saida = cliente.post("/auth/logout", headers={"X-CSRF-Token": csrf})
+            eu = cliente.get("/auth/eu")
+
+            self.assertEqual(saida.status_code, 200, saida.text)
+            self.assertFalse(cliente.cookies.get(config.COOKIE_SESSAO))
+            self.assertFalse(eu.json()["autenticado"])
+            self.assertIsNone(autenticacao.usuario_da_sessao(token))
+
+    def test_logout_sem_csrf_limpa_o_cookie(self) -> None:
+        enviados, patch_envio = capturar_envios()
+        with ambiente() as (cliente, _):
+            criar_usuario()
+            with patch_envio:
+                cliente.post(
+                    "/auth/login",
+                    json={"email": "pessoa@empresa.com", "senha": SENHA},
+                )
+            codigo = enviados[0][1]
+            cliente.post("/auth/verificar", json={"codigo": codigo})
+
+            saida = cliente.post("/auth/logout")
+
+            self.assertEqual(saida.status_code, 403)
+            self.assertFalse(cliente.cookies.get(config.COOKIE_SESSAO))
+
     def test_senha_errada_nao_revela_existencia_do_email(self) -> None:
         enviados, patch_envio = capturar_envios()
         with ambiente() as (cliente, _):

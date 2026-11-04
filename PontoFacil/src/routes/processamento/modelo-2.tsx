@@ -6,9 +6,7 @@ import {
   ImageIcon,
   FolderOpen,
   FileArchive,
-  FileText,
   UploadCloud,
-  X,
   Trash2,
   AlertCircle,
   CheckCircle2,
@@ -28,6 +26,7 @@ import {
 } from "@/lib/api";
 import { MenuLateral } from "@/components/ponto/MenuLateral";
 import { AvisoOcrDialog } from "@/components/ponto/AvisoOcrDialog";
+import { GaleriaArquivos } from "@/components/ponto/GaleriaArquivos";
 
 export const Route = createFileRoute("/processamento/modelo-2")({
   head: () => ({
@@ -56,12 +55,6 @@ const ext = (n: string) => n.split(".").pop()?.toLowerCase() ?? "";
 const isImg = (n: string) => IMG_EXT.includes(ext(n));
 const isPdf = (n: string) => PDF_EXT.includes(ext(n));
 const isAceito = (n: string) => isImg(n) || isPdf(n);
-const fmtSize = (b: number) =>
-  b < 1024
-    ? `${b} B`
-    : b < 1048576
-      ? `${(b / 1024).toFixed(1)} KB`
-      : `${(b / 1048576).toFixed(1)} MB`;
 
 type Item = {
   key: string;
@@ -136,6 +129,7 @@ function Index() {
     }
     if (list.length && !novos.length && !warn.length)
       warn.push("Nenhuma imagem encontrada na seleção.");
+
     setItems((p) => [...p, ...novos]);
     setMsgs(warn);
   }
@@ -191,20 +185,17 @@ function Index() {
     (i) => i.kind === "imagem" || i.kind === "pdf" || (i.zipCount ?? 1) > 0,
   );
   const totalCartoes = items.reduce((s, i) => s + (i.kind === "zip" ? (i.zipCount ?? 0) : 1), 0);
-function gerarIdempotencyKey(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
+  function gerarIdempotencyKey(): string {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
 
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
-    /[xy]/g,
-    (caractere) => {
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (caractere) => {
       const aleatorio = Math.floor(Math.random() * 16);
       const valor = caractere === "x" ? aleatorio : (aleatorio & 0x3) | 0x8;
       return valor.toString(16);
-    },
-  );
-}
+    });
+  }
   async function processar() {
     if (loading) return;
     setErro(null);
@@ -219,7 +210,7 @@ function gerarIdempotencyKey(): string {
           if (p >= 100) setEtapa(1);
         },
         "modelo-2",
-        { aceiteOcr: true, idempotencyKey: gerarIdempotencyKey() },      
+        { aceiteOcr: true, idempotencyKey: gerarIdempotencyKey() },
       );
       setEtapa(3);
       setRes(r);
@@ -355,63 +346,7 @@ function gerarIdempotencyKey(): string {
                   <Trash2 className="h-4 w-4" /> Limpar seleção
                 </button>
               </div>
-              <div className="space-y-4">
-                {groups.map(([folder, list]) => (
-                  <div key={folder || "_"}>
-                    {folder && (
-                      <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-primary">
-                        <FolderOpen className="h-4 w-4" />
-                        {folder}{" "}
-                        <span className="font-normal text-muted-foreground">
-                          ({list.length} imagem(ns))
-                        </span>
-                      </p>
-                    )}
-                    <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                      {list.map((i) => (
-                        <li
-                          key={i.key}
-                          className="flex items-center gap-3 rounded-lg border border-border bg-card p-2"
-                        >
-                          {i.preview ? (
-                            <img
-                              src={i.preview}
-                              alt={i.file.name}
-                              className="h-12 w-12 rounded object-cover"
-                            />
-                          ) : (
-                            <div className="flex h-12 w-12 items-center justify-center rounded bg-secondary">
-                              {i.kind === "pdf" ? (
-                                <FileText className="h-5 w-5 text-primary" />
-                              ) : (
-                                <FileArchive className="h-5 w-5 text-primary" />
-                              )}
-                            </div>
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium">{i.file.name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {i.kind === "zip" ? "ZIP" : ext(i.file.name).toUpperCase()} ·{" "}
-                              {fmtSize(i.file.size)}
-                              {i.kind === "zip" &&
-                                (i.zipCount == null
-                                  ? " · conteúdo não verificado"
-                                  : ` · ${i.zipCount} imagem(ns)`)}
-                            </p>
-                          </div>
-                          <button
-                            onClick={() => remove(i.key)}
-                            aria-label={`Remover ${i.file.name}`}
-                            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-primary"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
+              <GaleriaArquivos grupos={groups} onRemover={remove} />
             </div>
           )}
         </Section>

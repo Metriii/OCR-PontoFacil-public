@@ -265,7 +265,35 @@ export function HistoryPanel({
                       </div>
                     </div>
                   </td>
-                  <td className="px-3">{r.employee}</td>
+                  <td className="px-3">
+                    {(() => {
+                    const funcionarios = r.employee
+                      .split(",")
+                      .map((nome) => nome.trim())
+                      .filter(Boolean);
+
+                    const visiveis = funcionarios.slice(0, 5);
+                    const restantes = funcionarios.length - visiveis.length;
+                     return (
+      <div className="flex flex-wrap items-center gap-1">
+        {visiveis.map((nome, index) => (
+          <span
+            key={`${nome}-${index}`}
+            className="rounded-md bg-muted px-2 py-1 text-xs"
+          >
+            {nome}
+          </span>
+        ))}
+
+        {restantes > 0 && (
+          <span className="rounded-md bg-primary-soft px-2 py-1 text-xs font-medium text-primary">
+            +{restantes}
+                        </span>
+                       )}
+                      </div>
+                      );
+                    })()}
+                  </td>
                   <td className="px-3 tabular-nums">{fmt(r.generatedAt)}</td>
                   <td className="px-3">
                     <span

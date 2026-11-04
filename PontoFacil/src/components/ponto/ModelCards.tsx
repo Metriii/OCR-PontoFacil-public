@@ -62,9 +62,8 @@ export function ModelCards() {
                 src={m.img}
                 alt={`Miniatura do ${m.name}`}
                 loading="lazy"
-                width={736}
-                height={912}
-                className="h-20 w-16 shrink-0 rounded object-cover shadow-sm"
+                decoding="async"
+                className="h-28 w-24 shrink-0 rounded border border-border bg-white object-contain p-1 shadow-sm"
               />
               <div className="flex-1">
                 <div className="font-semibold">{m.name}</div>
@@ -82,7 +81,7 @@ export function ModelCards() {
             </>
           );
           const cls =
-            "flex h-28 items-center gap-4 rounded-xl border bg-card px-5 shadow-sm transition-colors";
+            "flex h-32 items-center gap-4 rounded-xl border bg-card px-5 shadow-sm transition-colors";
           return m.ready ? (
             <Link
               key={m.id}

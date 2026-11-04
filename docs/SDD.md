@@ -100,9 +100,11 @@ entrega (endpoint HTTP) que hoje **não existe**.
 | RNF-02 | O backend deve reutilizar **uma sessão MCP** para todo o lote (não abrir por imagem). |
 | RNF-03 | O token do AI Studio deve vir de variável de ambiente / arquivo ignorado pelo Git. |
 | RNF-04 | O upload deve reportar progresso (já implementado no frontend via XHR). |
-| RNF-05 | O backend deve limitar concorrência (1–8 chamadas simultâneas, padrão 5) por rate-limit. |
+| RNF-05 | O backend deve limitar o OCR a 1–10 chamadas simultâneas por chamado (padrão 10), configurável em `PONTOFACIL_OCR_CONCORRENCIA`. |
 | RNF-06 | Deve haver tratamento de erro e retorno com mensagem legível ao usuário. |
 | RNF-07 | Nomes de arquivo/aba devem ser sanitizados (sem `\ / ? * [ ] :`). |
+| RNF-08 | O backend processa no máximo **2 chamados simultâneos** (padrão); ao saturar → `409`. Configurável em `PONTOFACIL_MAX_CHAMADOS` (1–8). O histórico continua global. |
+| RNF-09 | O cookie de sessão não usa `Max-Age`/`Expires` (cookie de sessão do navegador); o logout limpa o cookie mesmo em `403` por CSRF. |
 
 ---
 
@@ -115,6 +117,8 @@ Processa um lote de arquivos.
 - **Método:** `POST`
 - **Content-Type:** `multipart/form-data`
 - **Campo:** `arquivos` (repetido; o frontend envia o caminho relativo como nome do arquivo).
+- **Limite:** não há limite de quantidade de imagens no upload; o lote é
+  limitado apenas por tamanho (20 MB/arquivo e 80 MB no total).
 
 **Resposta 200 (JSON)** — tipo `ResultadoProcessamento`:
 
@@ -147,8 +151,10 @@ Processa um lote de arquivos.
 }
 ```
 
-**Erros:** `400` (nenhum arquivo válido), `415` (formato não suportado), `500`
-(falha de OCR/servidor) com corpo `{ "erro": "mensagem" }`.
+**Erros:** `400` (nenhum arquivo válido),
+`409` (limite de chamados simultâneos atingido, ou `Idempotency-Key` em
+andamento), `415` (formato não suportado), `500` (falha de OCR/servidor) com
+corpo `{ "detail": "mensagem" }`.
 
 ### 5.2 `GET /download/{arquivo}`
 
@@ -372,6 +378,15 @@ Clique "Baixar Excel" → GET {API_URL}/download/{arquivo} → arquivo .xlsx
   (`/processamento/modelo-1`). Os modelos 2 e 3 devem criar os seus próprios
   utilitários em vez de importar estes. Ver
   [`memoria/12-exclusividade-modelo1-entrada-20h.md`](../memoria/12-exclusividade-modelo1-entrada-20h.md).
+- **ADR-06 — Concorrência de OCR:** até 10 imagens enviadas ao MCP ao mesmo
+  tempo por chamado (`PONTOFACIL_OCR_CONCORRENCIA`, 1–10). O contrato do MCP
+  aceita **uma imagem por chamada** (`input_data`); portanto "10 imagens" são 10
+  chamadas simultâneas, não um único payload. O upload não tem limite de
+  quantidade.
+- **ADR-07 — Concorrência limitada por semáforo:** substitui o lock global por
+  `BoundedSemaphore(PONTOFACIL_MAX_CHAMADOS)`, padrão 2. Não há isolamento de
+  dados por usuário (histórico global), decisão consciente para preservar o
+  comportamento atual.
 
 ---
 

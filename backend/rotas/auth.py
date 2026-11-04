@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from .. import auditoria, autenticacao, config, seguranca, usuarios
@@ -55,10 +56,11 @@ def _definir_cookie_desafio(response: Response, token: str) -> None:
 
 
 def _definir_cookie_sessao(response: Response, token: str) -> None:
+    # Sem max_age: cookie de sessao, descartado ao fechar o navegador. A
+    # expiracao absoluta continua sendo validada no servidor.
     response.set_cookie(
         config.COOKIE_SESSAO,
         token,
-        max_age=config.SESSAO_ABSOLUTA_DIAS * 24 * 60 * 60,
         httponly=True,
         secure=config.COOKIE_SECURE,
         samesite="lax",
@@ -149,17 +151,23 @@ def reenviar(request: Request) -> dict[str, object]:
     }
 
 
-@router.post("/logout")
-def logout(request: Request, response: Response) -> dict[str, str]:
+@router.post("/logout", response_model=None)
+def logout(request: Request, response: Response) -> dict[str, str] | JSONResponse:
     token = request.cookies.get(config.COOKIE_SESSAO)
     usuario = autenticacao.usuario_da_sessao(token)
     if usuario is not None:
         enviado = request.headers.get("X-CSRF-Token")
         if not autenticacao.csrf_valido(token, enviado):
             _auditar(str(usuario["email"]), "auth_logout", "failed", "CSRF invalido")
-            raise HTTPException(
-                status_code=403, detail="Token CSRF ausente ou invalido."
+            # Mesmo recusando a acao, o navegador nao deve continuar com o
+            # cookie de sessao. O frontend busca o CSRF antes de sair.
+            resposta = JSONResponse(
+                status_code=403,
+                content={"detail": "Token CSRF ausente ou invalido."},
             )
+            _limpar_cookie_sessao(resposta)
+            _limpar_cookie_desafio(resposta)
+            return resposta
         autenticacao.revogar_sessao(token)
         _auditar(str(usuario["email"]), "auth_logout", "success")
     _limpar_cookie_sessao(response)

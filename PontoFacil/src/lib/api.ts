@@ -185,6 +185,16 @@ export async function obterSessao(): Promise<RespostaSessao> {
 
 export async function sair() {
   try {
+    // O logout exige CSRF. Se o token ainda nao estiver em memoria (ex.: pagina
+    // recarregada), busca /auth/eu antes para nao receber 403 e deixar a sessao
+    // do servidor viva.
+    if (!csrfToken) {
+      try {
+        await obterSessao();
+      } catch {
+        // Sem sessao valida o backend apenas limpa o cookie.
+      }
+    }
     await pedirApi("/auth/logout", { method: "POST" });
   } finally {
     definirCsrfToken(null);

@@ -6,6 +6,7 @@ import asyncio
 import os
 import sys
 import tempfile
+import threading
 import unittest
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -91,12 +92,12 @@ class TestRetryOCR(unittest.IsolatedAsyncioTestCase):
 class TestConfigConcorrencia(unittest.TestCase):
     def test_padrao_e_limites_da_concorrencia(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
-            self.assertEqual(config._concorrencia_ocr(), 5)
+            self.assertEqual(config._concorrencia_ocr(), 10)
 
         self.assertEqual(config._concorrencia_ocr("0"), 1)
         self.assertEqual(config._concorrencia_ocr("1"), 1)
-        self.assertEqual(config._concorrencia_ocr("5"), 5)
-        self.assertEqual(config._concorrencia_ocr("20"), 8)
+        self.assertEqual(config._concorrencia_ocr("10"), 10)
+        self.assertEqual(config._concorrencia_ocr("20"), 10)
 
     def test_rejeita_concorrencia_invalida(self) -> None:
         with self.assertRaises(RuntimeError):
@@ -281,8 +282,8 @@ class TestStderrMCP(unittest.TestCase):
             self.assertEqual(Path(errlog.name), arquivo_stderr)
 
 
-class TestLockProcessamento(unittest.TestCase):
-    def test_rejeita_lote_quando_ja_ha_processamento(self) -> None:
+class TestLimiteChamadosSimultaneos(unittest.TestCase):
+    def test_rejeita_lote_quando_o_limite_esta_ocupado(self) -> None:
         try:
             from fastapi.testclient import TestClient
 
@@ -296,14 +297,17 @@ class TestLockProcessamento(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as pasta:
             raiz = Path(pasta)
+            semaforo = threading.BoundedSemaphore(1)
             with (
                 patch.object(config, "DIR_SAIDA", raiz),
                 patch.object(config, "DIR_DADOS", raiz / "data"),
                 patch.object(config, "ARQUIVO_BANCO", raiz / "data" / "teste.db"),
                 patch.object(config, "DIR_LOGS", raiz / "logs"),
                 patch.object(config, "SYNC_EXCEL_ATIVO", False),
+                patch.object(config, "MAX_CHAMADOS_SIMULTANEOS", 1),
+                patch.object(processar, "_SEMAFORO_PROCESSAMENTO", semaforo),
             ):
-                processar._LOCK_PROCESSAMENTO.acquire()
+                semaforo.acquire()
                 try:
                     with TestClient(app) as cliente:
                         autenticar(cliente)
@@ -316,7 +320,21 @@ class TestLockProcessamento(unittest.TestCase):
                             headers={"Idempotency-Key": "teste-lock-global"},
                         )
                 finally:
-                    processar._LOCK_PROCESSAMENTO.release()
+                    semaforo.release()
 
         self.assertEqual(resposta.status_code, 409)
-        self.assertIn("andamento", resposta.json()["detail"])
+        self.assertIn("maximo", resposta.json()["detail"])
+
+    def test_semaforo_usa_o_limite_configurado(self) -> None:
+        from backend.rotas import processar
+
+        semaforo = processar._SEMAFORO_PROCESSAMENTO
+        ocupadas = 0
+        try:
+            while semaforo.acquire(blocking=False):
+                ocupadas += 1
+            self.assertEqual(ocupadas, config.MAX_CHAMADOS_SIMULTANEOS)
+            self.assertFalse(semaforo.acquire(blocking=False))
+        finally:
+            for _ in range(ocupadas):
+                semaforo.release()

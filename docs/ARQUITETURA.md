@@ -209,6 +209,8 @@ PontoFacil/src/
 | Sessão/CSRF | `GET /auth/eu` devolve usuário e `csrf_token`; escritas exigem `X-CSRF-Token` |
 | Endpoint de upload | `POST {API_URL}/processar`, multipart, campo `arquivos` + `aceite_ocr=true` + header `Idempotency-Key` |
 | Duplicidade | Mesma `Idempotency-Key` em andamento/concluída → `409` com `processing_id` |
+| Concorrência | Até 2 chamados simultâneos (padrão); ao saturar → `409`. Configurável em `PONTOFACIL_MAX_CHAMADOS` (1–8) |
+| OCR por chamado | Até 10 imagens enviadas ao MCP ao mesmo tempo (padrão); configurável em `PONTOFACIL_OCR_CONCORRENCIA` (1–10). Não há limite de imagens no upload |
 | Endpoint de download | `GET {API_URL}/download/{arquivo}` |
 | Histórico de planilhas | `GET {API_URL}/planilhas` (lista os `.xlsx` de `_out`) |
 | Visualizar planilha | `GET {API_URL}/planilhas/{arquivo}/previa` (prévia HTML, sem abrir o Excel local) |
@@ -259,11 +261,14 @@ PontoFacil/                     # raiz do repositório único
 | Decisão | Prós | Contras |
 |---------|------|---------|
 | FastAPI sobre o MCP existente | reuso imediato dos scripts; simples | acoplango a `uvx`/token |
-| 1 sessão MCP por lote | muito mais rápido que sessão por imagem | sessão serial; paralelismo exige pool |
+| 1 sessão MCP por lote | muito mais rápido que sessão por imagem | chamadas paralelas limitadas pela concorrência de OCR |
 | Mapeamento fixo 2..5 (4 pontas) | adere à UI atual | frágil a layouts diferentes |
 | Confiança heurística | funciona sem score do OCR | pode gerar revisão excessiva |
 | Repo único | versionamento e docs coesos | precisa remover `.git` aninhado |
 | Execução síncrona | simples de implementar | lotes grandes podem dar timeout |
+| Até 10 OCRs simultâneos por chamado | reduz o tempo de lotes grandes | mais pressão no AI Studio; ajustável por env |
+| Semáforo de 2 chamados simultâneos | atende dois usuários sem saturar o OCR | terceiro chamado recebe `409` e precisa tentar de novo |
+| Histórico global (sem isolamento por usuário) | mantém o comportamento atual | qualquer sessão vê as planilhas geradas; decisão consciente |
 
 ---
 
@@ -298,6 +303,8 @@ Variáveis de ambiente:
 | `PONTOFACIL_DB_PATH` | backend | caminho do SQLite (padrão `data/pontofacil.db`) |
 | `PONTOFACIL_LOG_DIR` | backend | pasta dos logs (padrão `logs/`) |
 | `PONTOFACIL_TIMEZONE` | backend | fuso dos logs/datas (padrão `America/Sao_Paulo`) |
+| `PONTOFACIL_MAX_CHAMADOS` | backend | chamados simultâneos, 1–8 (padrão `2`) |
+| `PONTOFACIL_OCR_CONCORRENCIA` | backend | OCRs simultâneos por chamado, 1–10 (padrão `10`) |
 
 ---
 
@@ -309,6 +316,9 @@ Variáveis de ambiente:
   arquivo e total do lote).
 - CORS restrito à origem do frontend em produção.
 - Todas as rotas privadas exigem sessão; escritas exigem `X-CSRF-Token`.
+- O cookie de sessão é de sessão do navegador (sem `Max-Age`/`Expires`); a
+  expiração absoluta continua validada no servidor. O logout revoga a sessão e
+  limpa o cookie mesmo quando o CSRF está ausente (`403`).
 - Headers de resposta: `X-Content-Type-Options`, `X-Frame-Options`,
   `Referrer-Policy`, `Permissions-Policy`; HSTS em produção.
 - O aviso de OCR é obrigatório no frontend e no backend (`aceite_ocr=true`).

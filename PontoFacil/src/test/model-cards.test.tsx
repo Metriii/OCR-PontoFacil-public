@@ -42,4 +42,12 @@ describe("ModelCards", () => {
     );
     expect(screen.queryByText("Em breve")).toBeNull();
   });
+
+  it("exibe a miniatura inteira, sem cortar o conteudo", () => {
+    render(<ModelCards />);
+
+    const miniatura = screen.getByAltText("Miniatura do Modelo 1 · Listra Azul");
+    expect(miniatura.className).toContain("object-contain");
+    expect(miniatura.className).not.toContain("object-cover");
+  });
 });
