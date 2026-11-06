@@ -42,6 +42,8 @@ class ResultadoProcessamento(BaseModel):
     consolidado: Planilha | None = None
     avisos: list[AvisoProcessamento] = []
     processing_id: str | None = None
+    # Imagens bloqueadas pela anonimizacao local (nao chegaram ao OCR externo).
+    bloqueadas_anonimizacao: int = 0
 
 
 class AbaPrevia(BaseModel):

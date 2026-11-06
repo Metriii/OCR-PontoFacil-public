@@ -87,6 +87,32 @@ def _concorrencia_ocr(valor: str | int | None = None) -> int:
 CONCORRENCIA_OCR = _concorrencia_ocr()
 
 
+# ---------------------------------------------------------------------------
+# Anonimizacao local (PP-StructureV3)
+# ---------------------------------------------------------------------------
+def _anon_concorrencia(valor: str | int | None = None) -> int:
+    """Le e limita as inferencias locais simultaneas."""
+    bruto = valor if valor is not None else os.getenv(
+        "PONTOFACIL_ANON_CONCORRENCIA", "1"
+    )
+    try:
+        numero = int(bruto)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "PONTOFACIL_ANON_CONCORRENCIA deve ser um numero inteiro."
+        ) from exc
+    return max(1, min(4, numero))
+
+
+ANON_CONCORRENCIA = _anon_concorrencia()
+ANON_TIMEOUT_SEG = max(
+    5.0, float(os.getenv("PONTOFACIL_ANON_TIMEOUT", "400"))
+)
+ANON_PDF_DPI = max(72, min(400, int(os.getenv("PONTOFACIL_ANON_PDF_DPI", "200"))))
+ANON_MARGEM_PX = max(0, min(40, int(os.getenv("PONTOFACIL_ANON_MARGEM_PX", "6"))))
+ANON_DISPOSITIVO = os.getenv("PONTOFACIL_ANON_DISPOSITIVO", "cpu").strip() or "cpu"
+
+
 def _booleano_env(nome: str, padrao: bool) -> bool:
     valor = os.getenv(nome)
     if valor is None:

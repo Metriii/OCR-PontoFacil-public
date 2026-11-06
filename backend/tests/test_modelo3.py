@@ -15,6 +15,7 @@ sys.path.insert(0, str(RAIZ))
 
 from backend.modelo3 import mapper, parser  # noqa: E402
 from backend.modelo3.parser import separar_linha  # noqa: E402
+from backend.tests.apoio import processar_lote_aprovado  # noqa: E402
 
 REFERENCIA = "01/09/2026 a 15/09/2026"
 DIAS_PT = (
@@ -396,7 +397,7 @@ class TestEndpointModelo3(unittest.TestCase):
         )
         chamadas: list[str] = []
 
-        async def processar_falso(imagens, lote=None):
+        async def processar_falso(imagens, lote=None, estatisticas=None):
             chamadas.append("modelo-3")
             return [folha], []
 
@@ -449,6 +450,11 @@ class TestPipelineModelo3(unittest.IsolatedAsyncioTestCase):
                 patch.object(config, "DIR_LOGS", raiz / "logs"),
                 patch.object(servico.mcp_client, "abrir_mcp", abrir_falso),
                 patch.object(servico.mcp_client, "ocr_imagem", ocr_falso),
+                patch.object(
+                    servico.anonimizacao_service,
+                    "processar_lote",
+                    processar_lote_aprovado,
+                ),
             ):
                 folhas, avisos = await servico.processar_folhas_modelo3(
                     [("ana.jpg", b"imagem")]

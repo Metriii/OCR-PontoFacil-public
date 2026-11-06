@@ -394,7 +394,7 @@ class TestEndpointsSQLite(BaseTemporaria):
     def test_processar_persiste_e_registros_consulta(self) -> None:
         folha = _folha()
 
-        async def processar_falso(imagens, lote=None):
+        async def processar_falso(imagens, lote=None, estatisticas=None):
             return [folha], []
 
         with (
@@ -431,10 +431,10 @@ class TestEndpointsSQLite(BaseTemporaria):
             )
 
     def test_processar_modelo_2_despacha_para_folha_diaria(self) -> None:
-        async def processar_modelo2_falso(imagens, lote=None):
+        async def processar_modelo2_falso(imagens, lote=None, estatisticas=None):
             return [_folha()], []
 
-        async def processar_modelo1_nao_deveria(imagens, lote=None):
+        async def processar_modelo1_nao_deveria(imagens, lote=None, estatisticas=None):
             raise AssertionError("processar_folhas do Modelo 1 nao deveria ser chamado")
 
         with (
@@ -458,7 +458,7 @@ class TestEndpointsSQLite(BaseTemporaria):
             self.assertEqual(dados[0]["data_pontos"], "2026-10-01")
 
     def test_falha_de_persistencia_retorna_erro(self) -> None:
-        async def processar_falso(imagens, lote=None):
+        async def processar_falso(imagens, lote=None, estatisticas=None):
             return [_folha()], []
 
         with (

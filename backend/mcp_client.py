@@ -18,6 +18,7 @@ from mcp.client.stdio import stdio_client
 from PIL import Image, ImageOps
 
 from . import config, logs
+from .anonimizacao.artefato import ArtefatoAnonimizado
 
 TOOLS_PREFERIDAS = ["paddleocr_vl", "pp_structurev3", "ocr"]
 
@@ -94,9 +95,17 @@ def _preparar_imagem(imagem_bytes: bytes) -> bytes:
 
 async def ocr_imagem(
     sessao: ClientSession,
-    imagem_bytes: bytes,
+    imagem_bytes: ArtefatoAnonimizado,
     preparar: Callable[[bytes], bytes] | None = None,
 ) -> str:
+    # Barreira de privacidade: o MCP nunca recebe bytes crus nem a imagem
+    # original. Somente um artefato aprovado pela anonimizacao local pode
+    # atravessar esta fronteira.
+    if not isinstance(imagem_bytes, ArtefatoAnonimizado):
+        raise TypeError(
+            "ocr_imagem aceita somente ArtefatoAnonimizado; a imagem original "
+            "nao pode ser enviada ao MCP."
+        )
     inicio = time.monotonic()
     tools = (await sessao.list_tools()).tools
     nome = _escolher_tool(tools)

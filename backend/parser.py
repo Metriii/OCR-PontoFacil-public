@@ -45,12 +45,24 @@ def linhas_dia(grid: list[list[str]]) -> list[list[str]]:
     return _linhas_dia(grid)
 
 
-def nome_colaborador(grid: list[list[str]]) -> str | None:
+def nome_colaborador(
+    grid: list[list[str]], texto: str | None = None
+) -> str | None:
+    """Nome no padrao ``NNN - Nome``; aceita texto local do cabecalho.
+
+    O texto do cabecalho e extraido localmente pela anonimizacao e nunca e
+    enviado ao OCR externo. O grid continua sendo a primeira fonte para manter
+    o comportamento historico dos testes e das folhas antigas.
+    """
     for linha in grid:
         for celula in linha:
             m = _COLABORADOR_RE.search(celula.strip())
             if m:
                 return m.group(1).strip()
+    if texto:
+        m = _COLABORADOR_RE.search(texto)
+        if m:
+            return m.group(1).strip()
     return None
 
 

@@ -9,8 +9,41 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from backend.anonimizacao.artefato import ArtefatoAnonimizado
+from backend.anonimizacao.schemas import (
+    ResultadoAnonimizacao,
+    StatusAnonimizacao,
+)
+
 SENHA_TESTE = "senha-de-teste-123"
 EMAIL_TESTE = "teste@pontofacil.local"
+
+
+def resultado_anonimizado_aprovado(
+    nome: str, dados: bytes, id_opaco: str = "teste"
+) -> ResultadoAnonimizacao:
+    """Resultado aprovado para testes que nao exercitam o PP-StructureV3."""
+    return ResultadoAnonimizacao(
+        status=StatusAnonimizacao.APPROVED,
+        nome_original=nome,
+        artefato=ArtefatoAnonimizado(dados, id_opaco=id_opaco),
+        texto_cabecalho=None,
+        cabecalho_removido=True,
+        metadados_removidos=True,
+        verificacao_sensiveis="ok",
+        verificacao_integridade="ok",
+        id_opaco=id_opaco,
+    )
+
+
+async def processar_lote_aprovado(
+    imagens: list[tuple[str, bytes]], lote: str | None = None
+) -> list[ResultadoAnonimizacao]:
+    """Substitui a anonimizacao real nos testes de pipeline/OCR."""
+    return [
+        resultado_anonimizado_aprovado(nome, dados)
+        for nome, dados in imagens
+    ]
 
 
 def autenticar(

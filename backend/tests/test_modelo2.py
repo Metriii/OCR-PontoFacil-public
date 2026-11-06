@@ -16,6 +16,7 @@ sys.path.insert(0, str(RAIZ))
 from backend.modelo2 import imagem as modelo2_imagem
 from backend.modelo2 import mapper, normalizacao, parser  # noqa: E402
 from backend.modelo2.parser import JornadaPrevista, separar_linha  # noqa: E402
+from backend.tests.apoio import processar_lote_aprovado  # noqa: E402
 
 REFERENCIA = "01/09/2026 a 30/09/2026"
 REFERENCIA_ATRAVESSA_MES = "25/09/2026 a 24/10/2026"
@@ -782,6 +783,11 @@ class TestPipelineModelo2(unittest.IsolatedAsyncioTestCase):
                 patch.object(config, "DIR_LOGS", raiz / "logs"),
                 patch.object(servico.mcp_client, "abrir_mcp", abrir_falso),
                 patch.object(servico.mcp_client, "ocr_imagem", ocr_falso),
+                patch.object(
+                    servico.anonimizacao_service,
+                    "processar_lote",
+                    processar_lote_aprovado,
+                ),
             ):
                 folhas, avisos = await servico.processar_folhas_modelo2(
                     [("amanda.jpg", b"imagem")]
@@ -825,6 +831,11 @@ class TestPipelineModelo2(unittest.IsolatedAsyncioTestCase):
                 patch.object(config, "DIR_LOGS", raiz / "logs"),
                 patch.object(servico.mcp_client, "abrir_mcp", abrir_falso),
                 patch.object(servico.mcp_client, "ocr_imagem", ocr_falso),
+                patch.object(
+                    servico.anonimizacao_service,
+                    "processar_lote",
+                    processar_lote_aprovado,
+                ),
             ):
                 folhas, avisos = await servico.processar_folhas_modelo2(
                     [("luiz.jpg", b"imagem")]

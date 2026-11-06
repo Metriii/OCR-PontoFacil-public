@@ -567,7 +567,7 @@ class TestSaidaConsolidada(unittest.TestCase):
 
         folha = self._folha("ANA")
 
-        async def processar_falso(imagens, lote=None):
+        async def processar_falso(imagens, lote=None, estatisticas=None):
             return [folha], []
 
         with tempfile.TemporaryDirectory() as pasta:

@@ -17,6 +17,7 @@ sys.path.insert(0, str(RAIZ))
 
 from backend import config, servico  # noqa: E402
 from backend.modelos import Registro  # noqa: E402
+from backend.tests.apoio import processar_lote_aprovado  # noqa: E402
 
 
 class TestTimeoutsMCP(unittest.TestCase):
@@ -153,6 +154,11 @@ class TestConcorrenciaOCR(unittest.IsolatedAsyncioTestCase):
             with (
                 patch.object(servico.mcp_client, "abrir_mcp", _abrir_mcp_falso),
                 patch.object(servico.mcp_client, "ocr_imagem", ocr_falso),
+                patch.object(
+                    servico.anonimizacao_service,
+                    "processar_lote",
+                    processar_lote_aprovado,
+                ),
                 patch.object(servico.config, "DIR_LOGS", Path(pasta) / "logs"),
                 patch.object(servico.config, "CONCORRENCIA_OCR", 3),
             ):
@@ -187,6 +193,11 @@ class TestConcorrenciaOCR(unittest.IsolatedAsyncioTestCase):
             with (
                 patch.object(servico.mcp_client, "abrir_mcp", _abrir_mcp_falso),
                 patch.object(servico.mcp_client, "ocr_imagem", ocr_falso),
+                patch.object(
+                    servico.anonimizacao_service,
+                    "processar_lote",
+                    processar_lote_aprovado,
+                ),
                 patch.object(servico.config, "DIR_LOGS", Path(pasta) / "logs"),
                 patch.object(servico.config, "CONCORRENCIA_OCR", 1),
             ):
@@ -212,6 +223,11 @@ class TestConcorrenciaOCR(unittest.IsolatedAsyncioTestCase):
             with (
                 patch.object(servico.mcp_client, "abrir_mcp", _abrir_mcp_falso),
                 patch.object(servico.mcp_client, "ocr_imagem", ocr_falso),
+                patch.object(
+                    servico.anonimizacao_service,
+                    "processar_lote",
+                    processar_lote_aprovado,
+                ),
                 patch.object(servico.config, "DIR_LOGS", Path(pasta) / "logs"),
                 patch.object(servico.config, "CONCORRENCIA_OCR", 3),
                 patch.object(servico.config, "TENTATIVAS_OCR", 2),

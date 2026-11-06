@@ -17,6 +17,7 @@ sys.path.insert(0, str(RAIZ))
 
 from backend.modelo4.parser import CamposLinha, separar_linha  # noqa: E402
 from backend.modelo5 import imagem, mapper, parser  # noqa: E402
+from backend.tests.apoio import processar_lote_aprovado  # noqa: E402
 
 REFERENCIA = "02/09/2026 a 17/09/2026"
 DIAS_PT = (
@@ -398,6 +399,11 @@ class TestPipelineModelo5(unittest.IsolatedAsyncioTestCase):
                 patch.object(config, "DIR_LOGS", raiz / "logs"),
                 patch.object(servico.mcp_client, "abrir_mcp", abrir_falso),
                 patch.object(servico.mcp_client, "ocr_imagem", ocr_falso),
+                patch.object(
+                    servico.anonimizacao_service,
+                    "processar_lote",
+                    processar_lote_aprovado,
+                ),
             ):
                 folhas, avisos = await servico.processar_folhas_modelo5(
                     [("cristiano.jpg", b"imagem")]
@@ -429,6 +435,11 @@ class TestPipelineModelo5(unittest.IsolatedAsyncioTestCase):
                 patch.object(config, "DIR_LOGS", raiz / "logs"),
                 patch.object(servico.mcp_client, "abrir_mcp", abrir_falso),
                 patch.object(servico.mcp_client, "ocr_imagem", ocr_falso),
+                patch.object(
+                    servico.anonimizacao_service,
+                    "processar_lote",
+                    processar_lote_aprovado,
+                ),
             ):
                 folhas, avisos = await servico.processar_folhas_modelo5(
                     [("robert.jpg", b"imagem")]
@@ -456,6 +467,11 @@ class TestPipelineModelo5(unittest.IsolatedAsyncioTestCase):
                 patch.object(config, "DIR_LOGS", raiz / "logs"),
                 patch.object(servico.mcp_client, "abrir_mcp", abrir_falso),
                 patch.object(servico.mcp_client, "ocr_imagem", ocr_falso),
+                patch.object(
+                    servico.anonimizacao_service,
+                    "processar_lote",
+                    processar_lote_aprovado,
+                ),
             ):
                 folhas, avisos = await servico.processar_folhas_modelo5(
                     [("alexandre.jpg", b"imagem")]
@@ -507,7 +523,7 @@ class TestEndpointModelo5(unittest.TestCase):
         )
         chamadas: list[str] = []
 
-        async def processar_falso(imagens, lote=None):
+        async def processar_falso(imagens, lote=None, estatisticas=None):
             chamadas.append("modelo-5")
             return [folha], []
 

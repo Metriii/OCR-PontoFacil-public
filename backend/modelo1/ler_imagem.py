@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import json
 import os
 import shutil
@@ -37,6 +38,9 @@ from typing import Any
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+
+from ..anonimizacao import service as anonimizacao_service
+from ..anonimizacao.artefato import ArtefatoAnonimizado
 
 # ---------------------------------------------------------------------------
 # >>> COLE O SEU TOKEN DO AI STUDIO AQUI <<<
@@ -150,7 +154,13 @@ def _tabelas_markdown(texto: str) -> list:
     return tabelas
 
 
-async def _chamar_ocr(imagem: str, args: argparse.Namespace) -> tuple:
+async def _chamar_ocr(
+    imagem: ArtefatoAnonimizado, args: argparse.Namespace
+) -> tuple:
+    if not isinstance(imagem, ArtefatoAnonimizado):
+        raise SystemExit(
+            "A CLI so envia ao MCP um ArtefatoAnonimizado aprovado."
+        )
     comando, cmd_args = _launcher(args)
     parametros = StdioServerParameters(
         command=comando, args=cmd_args, env=_ambiente(args)
@@ -166,7 +176,9 @@ async def _chamar_ocr(imagem: str, args: argparse.Namespace) -> tuple:
             )
             props = schema.get("properties", {}) if isinstance(schema, dict) else {}
 
-            argumentos: dict[str, Any] = {"input_data": imagem}
+            argumentos: dict[str, Any] = {
+                "input_data": base64.b64encode(imagem).decode("ascii")
+            }
             if "output_mode" in props:
                 argumentos["output_mode"] = "detailed" if nome == "ocr" else "simple"
             if "return_images" in props:
@@ -185,13 +197,30 @@ def executar(args: argparse.Namespace) -> Path:
     caminho = Path(args.imagem)
     if not caminho.exists():
         raise SystemExit(f"Arquivo nao encontrado: {caminho}")
-    imagem = str(caminho.resolve())
 
-    tool, resultado = asyncio.run(_chamar_ocr(imagem, args))
+    # A CLI tambem passa pela anonimizacao local: o MCP recebe somente a tabela
+    # aprovada, nunca o caminho ou os bytes originais.
+    resultados = asyncio.run(
+        anonimizacao_service.processar_lote(
+            [(caminho.name, caminho.read_bytes())]
+        )
+    )
+    anonimizado = resultados[0] if resultados else None
+    if anonimizado is None or not anonimizado.aprovado:
+        codigo = (
+            anonimizado.codigo_falha.value
+            if anonimizado is not None and anonimizado.codigo_falha is not None
+            else "ANONYMIZATION_ERROR"
+        )
+        raise SystemExit(f"Anonimizacao bloqueou a imagem: {codigo}")
+
+    tool, resultado = asyncio.run(
+        _chamar_ocr(anonimizado.artefato, args)  # type: ignore[arg-type]
+    )
     texto = _extrair_texto(resultado)
 
     dados = {
-        "arquivo": imagem,
+        "arquivo": caminho.name,
         "lido_em": datetime.now().isoformat(timespec="seconds"),
         "modelo": args.modelo,
         "fonte": args.fonte,

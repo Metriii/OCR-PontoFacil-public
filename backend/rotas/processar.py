@@ -86,24 +86,27 @@ async def _executar_processamento(
     usuario_nome: str,
     avisos_entrada: list[str] | None = None,
 ) -> ResultadoProcessamento:
+    estatisticas: dict[str, int] = {}
     if modelo == "modelo-2":
         folhas, avisos_ocr = await servico.processar_folhas_modelo2(
-            imagens, lote=lote
+            imagens, lote=lote, estatisticas=estatisticas
         )
     elif modelo == "modelo-3":
         folhas, avisos_ocr = await servico.processar_folhas_modelo3(
-            imagens, lote=lote
+            imagens, lote=lote, estatisticas=estatisticas
         )
     elif modelo == "modelo-4":
         folhas, avisos_ocr = await servico.processar_folhas_modelo4(
-            imagens, lote=lote
+            imagens, lote=lote, estatisticas=estatisticas
         )
     elif modelo == "modelo-5":
         folhas, avisos_ocr = await servico.processar_folhas_modelo5(
-            imagens, lote=lote
+            imagens, lote=lote, estatisticas=estatisticas
         )
     else:
-        folhas, avisos_ocr = await servico.processar_folhas(imagens, lote=lote)
+        folhas, avisos_ocr = await servico.processar_folhas(
+            imagens, lote=lote, estatisticas=estatisticas
+        )
 
     registros: list[Registro] = [
         registro for folha in folhas for registro in folha.registros
@@ -118,6 +121,14 @@ async def _executar_processamento(
         usuario=usuario_nome,
         modelo=modelo,
     )
+    if estatisticas.get("bloqueadas_anonimizacao"):
+        logs.warning(
+            "Anonimizacao",
+            f"{estatisticas['bloqueadas_anonimizacao']} imagem(ns) bloqueada(s) "
+            "antes do OCR externo",
+            lote,
+            modelo=modelo,
+        )
 
     consolidado = None
     if folhas:
@@ -184,6 +195,9 @@ async def _executar_processamento(
         planilhas=[],
         consolidado=consolidado,
         avisos=_estruturar_avisos(avisos),
+        bloqueadas_anonimizacao=estatisticas.get(
+            "bloqueadas_anonimizacao", 0
+        ),
     )
 
 

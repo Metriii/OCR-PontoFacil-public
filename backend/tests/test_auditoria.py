@@ -95,7 +95,7 @@ class TestProcessamentoIdempotente(unittest.TestCase):
     def test_confirma_aviso_audita_ciclo_e_recusa_duplicata(self) -> None:
         chamadas: list[int] = []
 
-        async def processar_falso(imagens, lote=None):
+        async def processar_falso(imagens, lote=None, estatisticas=None):
             chamadas.append(len(imagens))
             return [], []
 
@@ -143,7 +143,7 @@ class TestProcessamentoIdempotente(unittest.TestCase):
     def test_sem_aceite_nao_inicia_ocr(self) -> None:
         chamadas: list[int] = []
 
-        async def processar_falso(imagens, lote=None):
+        async def processar_falso(imagens, lote=None, estatisticas=None):
             chamadas.append(len(imagens))
             return [], []
 
@@ -182,7 +182,7 @@ class TestProcessamentoIdempotente(unittest.TestCase):
     def test_falha_de_auditoria_impede_o_ocr(self) -> None:
         chamadas: list[int] = []
 
-        async def processar_falso(imagens, lote=None):
+        async def processar_falso(imagens, lote=None, estatisticas=None):
             chamadas.append(len(imagens))
             return [], []
 
@@ -214,7 +214,7 @@ class TestProcessamentoIdempotente(unittest.TestCase):
             self.assertTrue(linha[1])
 
     def test_falha_do_ocr_registra_evento_failed(self) -> None:
-        async def processar_falso(imagens, lote=None):
+        async def processar_falso(imagens, lote=None, estatisticas=None):
             raise HTTPException(status_code=500, detail="falha simulada no OCR")
 
         with ambiente() as (cliente, _):
@@ -235,11 +235,11 @@ class TestProcessamentoIdempotente(unittest.TestCase):
     def test_chave_com_falha_pode_ser_reutilizada(self) -> None:
         chamadas: list[int] = []
 
-        async def falhar(imagens, lote=None):
+        async def falhar(imagens, lote=None, estatisticas=None):
             chamadas.append("falha")
             raise HTTPException(status_code=500, detail="falha simulada")
 
-        async def sucesso(imagens, lote=None):
+        async def sucesso(imagens, lote=None, estatisticas=None):
             chamadas.append("sucesso")
             return [], []
 

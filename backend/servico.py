@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import config, logs, mcp_client, parser
+from .anonimizacao import service as anonimizacao_service
+from .anonimizacao.schemas import ResultadoAnonimizacao
 from .mapper import map_registro
 from .modelo2 import imagem as modelo2_imagem
 from .modelo2 import mapper as modelo2_mapper
@@ -56,7 +58,7 @@ class _Fluxo:
 
 _FLUXO_MODELO1 = _Fluxo(
     selecionar_grid=parser.selecionar_grid,
-    nome_colaborador=lambda grid, _texto: parser.nome_colaborador(grid),
+    nome_colaborador=parser.nome_colaborador,
     referencia=parser.referencia,
     linhas_dia=parser.linhas_dia,
     map_registro=map_registro,
@@ -267,6 +269,7 @@ def _processar_markdown(
     total: int,
     fluxo: _Fluxo,
     lote: str | None,
+    texto_cabecalho: str | None = None,
 ) -> tuple[FolhaProcessada | None, list[str]]:
     grid = fluxo.selecionar_grid(markdown)
     if not grid:
@@ -292,15 +295,20 @@ def _processar_markdown(
             _salvar_markdown_ocr(markdown, nome, lote)
             return None, [f'"{nome}": {motivo}']
 
-    funcionario = fluxo.nome_colaborador(grid, markdown)
-    referencia = fluxo.referencia(grid, markdown)
+    # Nome, periodo e jornada vem do cabecalho lido localmente. O markdown
+    # externo so contem a tabela anonimizada e nao deve ser a fonte desses
+    # dados. O fallback para o markdown mantem compatibilidade com chamadas
+    # antigas (por exemplo, scripts e testes que nao usam a camada local).
+    texto_metadados = texto_cabecalho or markdown
+    funcionario = fluxo.nome_colaborador(grid, texto_metadados)
+    referencia = fluxo.referencia(grid, texto_metadados)
     linhas = fluxo.linhas_dia(grid)
 
     registros = []
     linhas_excel = []
     if fluxo.map_folha is not None:
         jornada = (
-            fluxo.jornada_prevista(grid, markdown)
+            fluxo.jornada_prevista(grid, texto_metadados)
             if fluxo.jornada_prevista is not None
             else None
         )
@@ -366,6 +374,7 @@ async def _processar_com(
     imagens: list[tuple[str, bytes]],
     lote: str | None,
     fluxo: _Fluxo,
+    estatisticas: dict[str, int] | None = None,
 ) -> tuple[list[FolhaProcessada], list[str]]:
     folhas: list[FolhaProcessada] = []
     avisos: list[str] = []
@@ -381,14 +390,60 @@ async def _processar_com(
         lote,
     )
     inicio_lote = time.monotonic()
-    async with mcp_client.abrir_mcp() as sessao:
-        resultados = await _ocr_todas(
-            sessao, imagens, lote, fluxo.preparar_imagem
+
+    # A fronteira de privacidade fica antes de abrir o MCP: a partir daqui so
+    # existem artefatos aprovados pela anonimizacao local.
+    resultados_anon = await anonimizacao_service.processar_lote(imagens, lote)
+    aprovadas: list[
+        tuple[str, bytes, ResultadoAnonimizacao, bytes]
+    ] = []
+    for (nome, dados), resultado in zip(imagens, resultados_anon):
+        if not resultado.aprovado or resultado.artefato is None:
+            codigo = (
+                resultado.codigo_falha.value
+                if resultado.codigo_falha is not None
+                else "ANONYMIZATION_ERROR"
+            )
+            avisos.append(f'"{nome}": {codigo}')
+            continue
+        aprovadas.append(
+            (nome, resultado.artefato, resultado, dados)  # type: ignore[arg-type]
         )
 
-    for indice, ((nome, dados), resultado) in enumerate(
-        zip(imagens, resultados), start=1
-    ):
+    bloqueadas = total - len(aprovadas)
+    if estatisticas is not None:
+        estatisticas["bloqueadas_anonimizacao"] = bloqueadas
+        estatisticas["aprovadas_anonimizacao"] = len(aprovadas)
+
+    if not aprovadas:
+        logs.warning(
+            "OCR",
+            f"Nenhuma imagem aprovada pela anonimizacao ({bloqueadas} "
+            "bloqueada(s)); MCP nao foi aberto.",
+            lote,
+        )
+        return folhas, avisos
+
+    if bloqueadas:
+        logs.warning(
+            "OCR",
+            f"{bloqueadas} imagem(ns) bloqueada(s) pela anonimizacao; "
+            f"{len(aprovadas)} seguir(am) para o OCR externo.",
+            lote,
+        )
+
+    async with mcp_client.abrir_mcp() as sessao:
+        resultados = await _ocr_todas(
+            sessao,
+            [(nome, artefato) for nome, artefato, _r, _d in aprovadas],
+            lote,
+            fluxo.preparar_imagem,
+        )
+
+    for indice, (
+        (nome, _artefato, resultado_anon, dados_originais),
+        resultado,
+    ) in enumerate(zip(aprovadas, resultados), start=1):
         if resultado.erro is not None:
             detalhe = f"{type(resultado.erro).__name__}: {resultado.erro}"
             avisos.append(f'Falha ao ler "{nome}": {detalhe}')
@@ -397,11 +452,12 @@ async def _processar_com(
         folha, avisos_imagem = _processar_markdown(
             resultado.markdown or "",
             nome,
-            dados,
+            dados_originais,
             indice,
-            total,
+            len(aprovadas),
             fluxo,
             lote,
+            texto_cabecalho=resultado_anon.texto_cabecalho,
         )
         avisos.extend(avisos_imagem)
         if folha is not None:
@@ -420,38 +476,43 @@ async def _processar_com(
 async def processar_folhas(
     imagens: list[tuple[str, bytes]],
     lote: str | None = None,
+    estatisticas: dict[str, int] | None = None,
 ) -> tuple[list[FolhaProcessada], list[str]]:
     """Executa o pipeline do Modelo 1 (mantido sem alteracao de comportamento)."""
-    return await _processar_com(imagens, lote, _FLUXO_MODELO1)
+    return await _processar_com(imagens, lote, _FLUXO_MODELO1, estatisticas)
 
 
 async def processar_folhas_modelo2(
     imagens: list[tuple[str, bytes]],
     lote: str | None = None,
+    estatisticas: dict[str, int] | None = None,
 ) -> tuple[list[FolhaProcessada], list[str]]:
     """Executa o pipeline da folha diaria (Modelo 2)."""
-    return await _processar_com(imagens, lote, _FLUXO_MODELO2)
+    return await _processar_com(imagens, lote, _FLUXO_MODELO2, estatisticas)
 
 
 async def processar_folhas_modelo3(
     imagens: list[tuple[str, bytes]],
     lote: str | None = None,
+    estatisticas: dict[str, int] | None = None,
 ) -> tuple[list[FolhaProcessada], list[str]]:
     """Executa o pipeline do cartao tradicional quinzenal (Modelo 3)."""
-    return await _processar_com(imagens, lote, _FLUXO_MODELO3)
+    return await _processar_com(imagens, lote, _FLUXO_MODELO3, estatisticas)
 
 
 async def processar_folhas_modelo4(
     imagens: list[tuple[str, bytes]],
     lote: str | None = None,
+    estatisticas: dict[str, int] | None = None,
 ) -> tuple[list[FolhaProcessada], list[str]]:
     """Executa o pipeline do cartao quinzenal (Modelo 4)."""
-    return await _processar_com(imagens, lote, _FLUXO_MODELO4)
+    return await _processar_com(imagens, lote, _FLUXO_MODELO4, estatisticas)
 
 
 async def processar_folhas_modelo5(
     imagens: list[tuple[str, bytes]],
     lote: str | None = None,
+    estatisticas: dict[str, int] | None = None,
 ) -> tuple[list[FolhaProcessada], list[str]]:
     """Executa o pipeline do registro com duas linhas por data (Modelo 5)."""
-    return await _processar_com(imagens, lote, _FLUXO_MODELO5)
+    return await _processar_com(imagens, lote, _FLUXO_MODELO5, estatisticas)

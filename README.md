@@ -17,6 +17,52 @@ Excel, usando o **MCP do PaddleOCR** (modelo `PaddleOCR-VL-1.6` via AI Studio).
 > Regra do Modelo 1: entrada lida entre 20h e 23h vira 08h
 > preservando os minutos (`20:30` → `08:30`).
 
+## Anonimização local (obrigatória)
+
+Antes de qualquer chamada ao MCP/OCR externo, toda imagem ou PDF passa pela
+camada local `backend/anonimizacao/`:
+
+1. o PDF (quando houver) é rasterizado localmente;
+2. o **PP-StructureV3** roda localmente para achar a tabela de ponto;
+3. o cabeçalho inteiro é removido por recorte — não é tarja nem desfoque;
+4. nomes, CPF, matrícula, empresa e assinaturas dentro da tabela são removidos
+   quando a remoção é segura; em caso de dúvida, a imagem é **bloqueada**;
+5. a saída é regravada como PNG sem EXIF e com identificador opaco;
+6. somente o `ArtefatoAnonimizado` aprovado chega ao MCP. O cliente MCP recusa
+   qualquer outro tipo de bytes.
+
+O modo é **fail closed**: se a tabela/cabeçalho não puderem ser separados com
+segurança, o arquivo não segue para o OCR externo. A imagem original nunca é
+usada como fallback.
+
+A resposta de `/processar` ganhou o campo compatível
+`bloqueadas_anonimizacao`, com a quantidade de arquivos barrados nessa etapa.
+Os demais campos e o contrato do frontend foram preservados.
+
+### Instalação do ambiente de anonimização
+
+O processo do backend precisa do Paddle no **mesmo ambiente Python** que executa
+a API. Em uma instalação normal:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt -r backend/requirements.txt
+pip install -r backend/requirements-anonimizacao.txt
+```
+
+O `.venv-anon` é um ambiente separado usado apenas para PoC, calibração e
+inspeção do PP-StructureV3:
+
+```powershell
+python -m venv .venv-anon
+.\.venv-anon\Scripts\Activate.ps1
+pip install -r backend/requirements-anonimizacao.txt
+```
+
+Versões fixadas e detalhes de hardware, tempos, códigos de bloqueio, limites de
+PDF e retenção estão em
+[`docs/ANONIMIZACAO_LOCAL.md`](docs/ANONIMIZACAO_LOCAL.md).
+
 ## Requisitos
 
 - Python 3.10+ (recomendado 3.12)
@@ -171,5 +217,16 @@ O resultado aparece em `logs/YYYY-MM-DD.txt` com o componente
 backend/modelo1/
 ├── ler_imagem.py   # OCR via MCP do PaddleOCR -> JSON (exclusivo do Modelo 1)
 └── gerar_excel.py  # JSON -> planilha .xlsx (exclusivo do Modelo 1)
-requirements.txt    # dependencias
+
+backend/anonimizacao/
+├── detector.py     # PP-StructureV3 local + geometria da tabela
+├── recorte.py      # recorte, redacao e deskew
+├── validacao.py    # campos sensiveis, integridade e cabecalho
+├── metadados.py    # regrava PNG sem EXIF
+├── pdf.py          # rasterizacao local (1 pagina)
+├── artefato.py     # ArtefatoAnonimizado (fronteira do MCP)
+└── service.py      # orquestracao fail closed
+
+requirements.txt                    # dependencias do backend
+backend/requirements-anonimizacao.txt  # Paddle/PP-StructureV3 (versoes fixas)
 ```
