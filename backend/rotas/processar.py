@@ -29,6 +29,8 @@ from .. import (
     processamentos,
     servico,
 )
+from ..anonimizacao.artefato import ArtefatoAnonimizado
+from ..anonimizacao.schemas import ResultadoAnonimizacao
 from ..modelos import AvisoProcessamento, Planilha, Registro, ResultadoProcessamento
 
 router = APIRouter(tags=["processamento"])
@@ -85,9 +87,23 @@ async def _executar_processamento(
     lote: str,
     usuario_nome: str,
     avisos_entrada: list[str] | None = None,
+    aprovadas: (
+        list[tuple[str, ArtefatoAnonimizado, ResultadoAnonimizacao, str]] | None
+    ) = None,
+    total_cartoes: int | None = None,
 ) -> ResultadoProcessamento:
     estatisticas: dict[str, int] = {}
-    if modelo == "modelo-2":
+    if aprovadas is not None:
+        # Fluxo de previa: os artefatos ja passaram pela anonimizacao e pela
+        # aprovacao humana; aqui nao se roda o detector novamente.
+        folhas, avisos_ocr = await servico.processar_folhas_aprovadas(
+            modelo,
+            aprovadas,
+            lote=lote,
+            estatisticas=estatisticas,
+            total_cartoes=total_cartoes,
+        )
+    elif modelo == "modelo-2":
         folhas, avisos_ocr = await servico.processar_folhas_modelo2(
             imagens, lote=lote, estatisticas=estatisticas
         )
@@ -189,7 +205,9 @@ async def _executar_processamento(
 
     logs.info("API", "Lote concluido com sucesso", lote)
     return ResultadoProcessamento(
-        total_cartoes=len(imagens),
+        total_cartoes=(
+            total_cartoes if total_cartoes is not None else len(imagens)
+        ),
         processados=len(folhas),
         registros=registros,
         planilhas=[],

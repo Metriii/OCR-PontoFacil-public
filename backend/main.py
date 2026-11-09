@@ -36,6 +36,7 @@ from . import (
 )
 from .rotas import auth, download, planilhas, processar, registros
 from .rotas import admin_usuarios
+from .rotas import anonimizacao
 from .rotas import auditoria as rota_auditoria
 
 logging.basicConfig(level=logging.INFO)
@@ -69,6 +70,7 @@ app.include_router(auth.router)
 # escritas exigem tambem o header X-CSRF-Token (ver exigir_csrf nas rotas).
 _ROTAS_PROTEGIDAS = [Depends(autenticacao.exigir_senha_definitiva)]
 app.include_router(processar.router, dependencies=_ROTAS_PROTEGIDAS)
+app.include_router(anonimizacao.router, dependencies=_ROTAS_PROTEGIDAS)
 app.include_router(download.router, dependencies=_ROTAS_PROTEGIDAS)
 app.include_router(registros.router, dependencies=_ROTAS_PROTEGIDAS)
 app.include_router(planilhas.router, dependencies=_ROTAS_PROTEGIDAS)

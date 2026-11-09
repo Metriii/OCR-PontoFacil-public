@@ -315,33 +315,30 @@ function mensagemErroXhr(xhr: XMLHttpRequest): string {
   return `Erro da API (${xhr.status}).`;
 }
 
-/** Envia arquivos para POST {API_URL}/processar (multipart, campo "arquivos"). */
-export function processarCartoes(
+/** Envia multipart e devolve o JSON da resposta (com progresso de upload). */
+function enviarMultipart<T>(
+  caminho: string,
   files: { file: File; path: string }[],
   onUploadProgress: (pct: number) => void,
-  modelo: ModeloId,
-  opcoes: OpcoesProcessamento,
-): Promise<ResultadoProcessamento> {
+  campos: Record<string, string>,
+  cabecalhos: Record<string, string> = {},
+): Promise<T> {
   return new Promise((resolve, reject) => {
     if (!API_URL) return reject(new Error("Backend não conectado."));
-    if (!opcoes.aceiteOcr) {
-      return reject(new Error("É necessário confirmar o aviso sobre o OCR."));
-    }
     const fd = new FormData();
     files.forEach(({ file, path }) => fd.append("arquivos", file, path));
-    fd.append("modelo", modelo);
-    fd.append("aceite_ocr", "true");
+    Object.entries(campos).forEach(([chave, valor]) => fd.append(chave, valor));
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${API_URL}/processar`);
+    xhr.open("POST", `${API_URL}${caminho}`);
     xhr.withCredentials = true;
-    xhr.setRequestHeader("Idempotency-Key", opcoes.idempotencyKey);
     if (csrfToken) xhr.setRequestHeader("X-CSRF-Token", csrfToken);
+    Object.entries(cabecalhos).forEach(([chave, valor]) => xhr.setRequestHeader(chave, valor));
     xhr.upload.onprogress = (e) =>
       e.lengthComputable && onUploadProgress(Math.round((e.loaded / e.total) * 100));
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
-          resolve(JSON.parse(xhr.responseText));
+          resolve(JSON.parse(xhr.responseText) as T);
         } catch {
           reject(new Error("Resposta inválida da API."));
         }
@@ -350,6 +347,93 @@ export function processarCartoes(
     xhr.onerror = () => reject(new Error("Não foi possível conectar à API."));
     xhr.send(fd);
   });
+}
+
+/** Envia arquivos para POST {API_URL}/processar (multipart, campo "arquivos"). */
+export function processarCartoes(
+  files: { file: File; path: string }[],
+  onUploadProgress: (pct: number) => void,
+  modelo: ModeloId,
+  opcoes: OpcoesProcessamento,
+): Promise<ResultadoProcessamento> {
+  if (!opcoes.aceiteOcr) {
+    return Promise.reject(new Error("É necessário confirmar o aviso sobre o OCR."));
+  }
+  return enviarMultipart<ResultadoProcessamento>(
+    "/processar",
+    files,
+    onUploadProgress,
+    { modelo, aceite_ocr: "true" },
+    { "Idempotency-Key": opcoes.idempotencyKey },
+  );
+}
+
+// --- Pre-visualizacao e aprovacao antes do MCP ---
+
+export type ItemPreviaAnonimizacao = {
+  id: string;
+  nome: string;
+  status: "aprovada" | "bloqueada";
+  codigo?: string | null;
+  mensagem?: string | null;
+  url_previa?: string | null;
+};
+
+export type RespostaPrevias = {
+  lote: string;
+  total: number;
+  aprovadas: number;
+  bloqueadas: number;
+  itens: ItemPreviaAnonimizacao[];
+  avisos: string[];
+};
+
+/** Gera as previas anonimizadas. O MCP nao e chamado nesta etapa. */
+export function anonimizarCartoes(
+  files: { file: File; path: string }[],
+  onUploadProgress: (pct: number) => void,
+  modelo: ModeloId,
+): Promise<RespostaPrevias> {
+  return enviarMultipart<RespostaPrevias>("/anonimizar", files, onUploadProgress, { modelo });
+}
+
+/** Baixa o PNG anonimizado de uma previa (somente para o dono da sessao). */
+export async function obterImagemPrevia(id: string, signal?: AbortSignal): Promise<Blob> {
+  const resposta = await pedirApi(
+    `/anonimizar/${encodeURIComponent(id)}/previa`,
+    signal ? { signal } : undefined,
+  );
+  if (!resposta.ok) throw new Error(await mensagemDeErro(resposta));
+  return resposta.blob();
+}
+
+export type PedidoAprovacao = {
+  lote: string;
+  modelo: ModeloId;
+  ids: string[];
+  aceiteOcr: boolean;
+  totalCartoes: number;
+  idempotencyKey: string;
+};
+
+/** Envia ao MCP somente os artefatos aprovados pelo usuario. */
+export async function aprovarAnonimizacao(
+  pedido: PedidoAprovacao,
+): Promise<ResultadoProcessamento> {
+  const resposta = await pedirApi("/anonimizar/aprovar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      lote: pedido.lote,
+      modelo: pedido.modelo,
+      ids: pedido.ids,
+      aceite_ocr: pedido.aceiteOcr,
+      total_cartoes: pedido.totalCartoes,
+      idempotency_key: pedido.idempotencyKey,
+    }),
+  });
+  if (!resposta.ok) throw new Error(await mensagemDeErro(resposta));
+  return (await resposta.json()) as ResultadoProcessamento;
 }
 
 export async function listarRegistros(signal?: AbortSignal): Promise<RegistroPonto[]> {

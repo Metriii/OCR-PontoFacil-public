@@ -704,7 +704,7 @@ class TestAvisosEstruturaModelo4(unittest.TestCase):
 
         markdown = _tabela(self.CABECALHO_COM_DIAS)
         folha, avisos = servico._processar_markdown(
-            markdown, "pedro.jpg", b"x", 1, 1, servico._FLUXO_MODELO4, None
+            markdown, "pedro.jpg", "hash-de-teste", 1, 1, servico._FLUXO_MODELO4, None
         )
         assert folha is not None
         self.assertEqual(len(folha.registros), 1)

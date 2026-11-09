@@ -19,7 +19,6 @@ import {
 } from "lucide-react";
 import {
   isBackendConnected,
-  processarCartoes,
   resolveUrl,
   type Registro,
   type ResultadoProcessamento,
@@ -27,6 +26,8 @@ import {
 import { MenuLateral } from "@/components/ponto/MenuLateral";
 import { AvisoOcrDialog } from "@/components/ponto/AvisoOcrDialog";
 import { GaleriaArquivos } from "@/components/ponto/GaleriaArquivos";
+import { RevisaoAnonimizacaoDialog } from "@/components/ponto/RevisaoAnonimizacaoDialog";
+import { useFluxoPrevia } from "@/hooks/useFluxoPrevia";
 
 export const Route = createFileRoute("/processamento/modelo-2")({
   head: () => ({
@@ -68,8 +69,9 @@ type Item = {
 
 const ETAPAS = [
   "Arquivos enviados",
+  "Anonimização local",
+  "Revisão da anonimização",
   "Leitura das folhas",
-  "Validação dos horários",
   "Planilha pronta",
 ];
 
@@ -77,7 +79,6 @@ function Index() {
   const [items, setItems] = useState<Item[]>([]);
   const [msgs, setMsgs] = useState<string[]>([]);
   const [drag, setDrag] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [etapa, setEtapa] = useState(-1);
   const [progress, setProgress] = useState(0);
   const [erro, setErro] = useState<string | null>(null);
@@ -88,6 +89,24 @@ function Index() {
   const pastaRef = useRef<HTMLInputElement>(null);
   const zipRef = useRef<HTMLInputElement>(null);
   const connected = isBackendConnected();
+  const {
+    previa,
+    previaAberta,
+    enviando: loading,
+    preparar,
+    aprovar,
+    fechar,
+    reabrir,
+  } = useFluxoPrevia({
+    modelo: "modelo-2",
+    aoMudarEtapa: setEtapa,
+    aoAtualizarProgresso: setProgress,
+    aoFalhar: setErro,
+    aoConcluir: (resultado) => {
+      setRes(resultado);
+      setRegistros(resultado.registros ?? []);
+    },
+  });
 
   useEffect(() => () => items.forEach((i) => i.preview && URL.revokeObjectURL(i.preview)), []); // eslint-disable-line
 
@@ -185,42 +204,11 @@ function Index() {
     (i) => i.kind === "imagem" || i.kind === "pdf" || (i.zipCount ?? 1) > 0,
   );
   const totalCartoes = items.reduce((s, i) => s + (i.kind === "zip" ? (i.zipCount ?? 0) : 1), 0);
-  function gerarIdempotencyKey(): string {
-    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-      return crypto.randomUUID();
-    }
-
-    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (caractere) => {
-      const aleatorio = Math.floor(Math.random() * 16);
-      const valor = caractere === "x" ? aleatorio : (aleatorio & 0x3) | 0x8;
-      return valor.toString(16);
-    });
-  }
   async function processar() {
     if (loading) return;
-    setErro(null);
-    setLoading(true);
-    setEtapa(0);
-    setProgress(0);
-    try {
-      const r = await processarCartoes(
-        validos.map((i) => ({ file: i.file, path: i.path })),
-        (p) => {
-          setProgress(p);
-          if (p >= 100) setEtapa(1);
-        },
-        "modelo-2",
-        { aceiteOcr: true, idempotencyKey: gerarIdempotencyKey() },
-      );
-      setEtapa(3);
-      setRes(r);
-      setRegistros(r.registros ?? []);
-    } catch (e) {
-      setErro(e instanceof Error ? e.message : "Erro ao processar.");
-      setEtapa(-1);
-    } finally {
-      setLoading(false);
-    }
+    setRes(null);
+    setRegistros([]);
+    await preparar(validos.map((i) => ({ file: i.file, path: i.path })));
   }
 
   const precisaRevisao = res?.registros?.filter(needsReview).length ?? 0;
@@ -366,6 +354,15 @@ function Index() {
               )}
               Processar cartões
             </button>
+            {previa && !previaAberta && (
+              <button
+                onClick={reabrir}
+                disabled={loading}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-primary px-4 py-3 font-medium text-primary transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Revisar anonimização
+              </button>
+            )}
             {!connected && (
               <p className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Info className="h-4 w-4" />
@@ -376,9 +373,9 @@ function Index() {
               <p className="text-sm text-muted-foreground">Selecione ao menos um arquivo válido.</p>
             )}
           </div>
-          <ol className="mt-6 grid gap-3 sm:grid-cols-4">
+          <ol className="mt-6 grid gap-3 sm:grid-cols-5">
             {ETAPAS.map((e, idx) => {
-              const done = etapa > idx || (etapa === 3 && idx === 3);
+              const done = etapa > idx;
               const active = loading && etapa === idx;
               return (
                 <li
@@ -457,6 +454,13 @@ function Index() {
           setAvisoAberto(false);
           void processar();
         }}
+      />
+      <RevisaoAnonimizacaoDialog
+        aberto={previaAberta}
+        previa={previa}
+        enviando={loading}
+        onFechar={fechar}
+        onAprovar={(ids) => void aprovar(ids, previa?.total ?? totalCartoes)}
       />
     </div>
   );

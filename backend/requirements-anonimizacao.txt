@@ -1,0 +1,28 @@
+# Dependencias da camada de anonimizacao local (PP-StructureV3 + rasterizacao).
+#
+# Instale em um ambiente separado do backend principal, para que o processo da
+# API continue leve e sem Paddle:
+#
+#     py -3.12 -m venv .venv-anon
+#     .venv-anon\Scripts\Activate.ps1
+#     python -m pip install -r backend/requirements-anonimizacao.txt
+#
+# Versoes fixadas: sao as validadas na PoC (4 GB de RAM, CPU i3-3240).
+# O PaddlePaddle 3.3.1 no Windows/CPU vem do indice oficial da Paddle:
+#     python -m pip install paddlepaddle==3.3.1 \
+#         --index-url https://www.paddlepaddle.org.cn/packages/stable/cpu/
+# Se o indice acima nao estiver acessivel, use o pacote disponivel no PyPI.
+paddlepaddle==3.3.1
+paddleocr==3.7.0
+paddlex[ocr]==3.7.2
+
+# Rasterizacao local de PDF (a folha nunca vai inteira para o OCR externo).
+pypdfium2==5.14.0
+
+# Processamento de imagem e recorte.
+numpy==2.3.5
+opencv-contrib-python==4.10.0.84
+Pillow==13.0.0
+
+# Medicao de memoria no health-check da anonimizacao.
+psutil==7.2.2

@@ -112,6 +112,14 @@ ANON_PDF_DPI = max(72, min(400, int(os.getenv("PONTOFACIL_ANON_PDF_DPI", "200"))
 ANON_MARGEM_PX = max(0, min(40, int(os.getenv("PONTOFACIL_ANON_MARGEM_PX", "6"))))
 ANON_DISPOSITIVO = os.getenv("PONTOFACIL_ANON_DISPOSITIVO", "cpu").strip() or "cpu"
 
+# Previas de anonimizacao aguardando aprovacao humana antes do MCP.
+ANON_PREVIA_TTL_MIN = max(
+    1, int(os.getenv("PONTOFACIL_ANON_PREVIA_TTL_MIN", "15"))
+)
+ANON_PREVIA_MAX = max(
+    1, min(1000, int(os.getenv("PONTOFACIL_ANON_PREVIA_MAX", "200")))
+)
+
 
 def _booleano_env(nome: str, padrao: bool) -> bool:
     valor = os.getenv(nome)

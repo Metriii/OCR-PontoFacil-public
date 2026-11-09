@@ -14,6 +14,7 @@ from typing import Any, Callable
 
 from . import config, logs, mcp_client, parser
 from .anonimizacao import service as anonimizacao_service
+from .anonimizacao.artefato import ArtefatoAnonimizado
 from .anonimizacao.schemas import ResultadoAnonimizacao
 from .mapper import map_registro
 from .modelo2 import imagem as modelo2_imagem
@@ -116,6 +117,22 @@ _FLUXO_MODELO5 = _Fluxo(
     validar_layout=modelo5_parser.validar_layout,
     salvar_ocr_sem_grid=True,
 )
+
+_FLUXOS: dict[str, _Fluxo] = {
+    "modelo-1": _FLUXO_MODELO1,
+    "modelo-2": _FLUXO_MODELO2,
+    "modelo-3": _FLUXO_MODELO3,
+    "modelo-4": _FLUXO_MODELO4,
+    "modelo-5": _FLUXO_MODELO5,
+}
+
+
+def fluxo_do_modelo(modelo: str) -> _Fluxo:
+    """Devolve o fluxo do modelo validando o identificador."""
+    try:
+        return _FLUXOS[modelo]
+    except KeyError as exc:
+        raise ValueError(f"Modelo invalido: {modelo}") from exc
 
 
 def _ext(nome: str) -> str:
@@ -264,7 +281,7 @@ def _salvar_markdown_ocr(
 def _processar_markdown(
     markdown: str,
     nome: str,
-    dados: bytes,
+    origem_hash: str,
     indice: int,
     total: int,
     fluxo: _Fluxo,
@@ -352,7 +369,6 @@ def _processar_markdown(
                 )
 
     stem = Path(nome).stem
-    origem_hash = hashlib.sha256(dados).hexdigest()
     logs.info(
         "OCR",
         f"Imagem {indice}/{total} mapeada: {len(registros)} registro(s)",
@@ -376,27 +392,24 @@ async def _processar_com(
     fluxo: _Fluxo,
     estatisticas: dict[str, int] | None = None,
 ) -> tuple[list[FolhaProcessada], list[str]]:
-    folhas: list[FolhaProcessada] = []
-    avisos: list[str] = []
     if not imagens:
-        return folhas, avisos
+        return [], []
 
-    concorrencia = config.CONCORRENCIA_OCR
     total = len(imagens)
     logs.info(
         "OCR",
         f"Inicio do processamento de {total} imagem(ns), "
-        f"concorrencia={concorrencia}",
+        f"concorrencia={config.CONCORRENCIA_OCR}",
         lote,
     )
-    inicio_lote = time.monotonic()
 
     # A fronteira de privacidade fica antes de abrir o MCP: a partir daqui so
     # existem artefatos aprovados pela anonimizacao local.
     resultados_anon = await anonimizacao_service.processar_lote(imagens, lote)
     aprovadas: list[
-        tuple[str, bytes, ResultadoAnonimizacao, bytes]
+        tuple[str, ArtefatoAnonimizado, ResultadoAnonimizacao, str]
     ] = []
+    avisos: list[str] = []
     for (nome, dados), resultado in zip(imagens, resultados_anon):
         if not resultado.aprovado or resultado.artefato is None:
             codigo = (
@@ -407,9 +420,41 @@ async def _processar_com(
             avisos.append(f'"{nome}": {codigo}')
             continue
         aprovadas.append(
-            (nome, resultado.artefato, resultado, dados)  # type: ignore[arg-type]
+            (
+                nome,
+                resultado.artefato,  # type: ignore[arg-type]
+                resultado,
+                hashlib.sha256(dados).hexdigest(),
+            )
         )
 
+    folhas, avisos_ocr = await _processar_aprovadas(
+        aprovadas, lote, fluxo, estatisticas, total_cartoes=total
+    )
+    return folhas, [*avisos, *avisos_ocr]
+
+
+async def _processar_aprovadas(
+    aprovadas: list[tuple[str, ArtefatoAnonimizado, ResultadoAnonimizacao, str]],
+    lote: str | None,
+    fluxo: _Fluxo,
+    estatisticas: dict[str, int] | None = None,
+    *,
+    total_cartoes: int | None = None,
+) -> tuple[list[FolhaProcessada], list[str]]:
+    """Segue o pipeline a partir de artefatos ja aprovados pela anonimizacao.
+
+    ``aprovadas`` traz ``(nome, artefato, resultado_anon, origem_hash)``. Os
+    bytes originais nao circulam aqui; o hash preserva o vinculo com o arquivo
+    de origem sem manter a imagem em memoria.
+    """
+    folhas: list[FolhaProcessada] = []
+    avisos: list[str] = []
+    total = (
+        len(aprovadas)
+        if total_cartoes is None
+        else max(len(aprovadas), total_cartoes)
+    )
     bloqueadas = total - len(aprovadas)
     if estatisticas is not None:
         estatisticas["bloqueadas_anonimizacao"] = bloqueadas
@@ -432,16 +477,17 @@ async def _processar_com(
             lote,
         )
 
+    inicio_lote = time.monotonic()
     async with mcp_client.abrir_mcp() as sessao:
         resultados = await _ocr_todas(
             sessao,
-            [(nome, artefato) for nome, artefato, _r, _d in aprovadas],
+            [(nome, artefato) for nome, artefato, _r, _h in aprovadas],
             lote,
             fluxo.preparar_imagem,
         )
 
     for indice, (
-        (nome, _artefato, resultado_anon, dados_originais),
+        (nome, _artefato, resultado_anon, origem_hash),
         resultado,
     ) in enumerate(zip(aprovadas, resultados), start=1):
         if resultado.erro is not None:
@@ -452,7 +498,7 @@ async def _processar_com(
         folha, avisos_imagem = _processar_markdown(
             resultado.markdown or "",
             nome,
-            dados_originais,
+            origem_hash,
             indice,
             len(aprovadas),
             fluxo,
@@ -467,7 +513,7 @@ async def _processar_com(
         "OCR",
         f"Processamento concluido: {len(folhas)} folha(s), "
         f"{len(avisos)} aviso(s) em {time.monotonic() - inicio_lote:.2f}s, "
-        f"concorrencia={concorrencia}",
+        f"concorrencia={config.CONCORRENCIA_OCR}",
         lote,
     )
     return folhas, avisos
@@ -516,3 +562,21 @@ async def processar_folhas_modelo5(
 ) -> tuple[list[FolhaProcessada], list[str]]:
     """Executa o pipeline do registro com duas linhas por data (Modelo 5)."""
     return await _processar_com(imagens, lote, _FLUXO_MODELO5, estatisticas)
+
+
+async def processar_folhas_aprovadas(
+    modelo: str,
+    aprovadas: list[tuple[str, ArtefatoAnonimizado, ResultadoAnonimizacao, str]],
+    lote: str | None = None,
+    estatisticas: dict[str, int] | None = None,
+    *,
+    total_cartoes: int | None = None,
+) -> tuple[list[FolhaProcessada], list[str]]:
+    """Processa artefatos ja aprovados pela previa, sem reanonimizar."""
+    return await _processar_aprovadas(
+        aprovadas,
+        lote,
+        fluxo_do_modelo(modelo),
+        estatisticas,
+        total_cartoes=total_cartoes,
+    )
