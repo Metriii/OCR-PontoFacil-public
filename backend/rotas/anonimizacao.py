@@ -2,12 +2,16 @@
 
 Fluxo em duas chamadas:
 
-1. ``POST /anonimizar`` gera os artefatos e guarda os aprovados em memoria,
+1. ``POST /anonimizar`` gera os artefatos e guarda os aprovados em memoria/disco,
    devolvendo uma URL de previa por imagem. O MCP nao e aberto.
 2. ``POST /anonimizar/aprovar`` recebe os ids aprovados pelo usuario e segue o
    pipeline normal, enviando ao MCP somente os artefatos escolhidos.
 
 As imagens bloqueadas nunca entram na lista de aprovacao e nunca chegam ao MCP.
+
+Estados (RF-PRIV-005):
+    aguardando_tratamento -> aguardando_revisao -> (aprovada | reprovada)
+    aprovada -> enviando_mcp -> processada | falha
 """
 
 from __future__ import annotations
@@ -44,6 +48,8 @@ class ItemPrevia(BaseModel):
     codigo: str | None = None
     mensagem: str | None = None
     url_previa: str | None = None
+    tratamento_necessario: bool = False
+    aviso: str | None = None
 
 
 class RespostaPrevias(BaseModel):
@@ -95,7 +101,11 @@ async def anonimizar(
     modelo: str = Form("modelo-1"),
     usuario: dict[str, object] = Depends(autenticacao.exigir_csrf),
 ) -> RespostaPrevias:
-    """Gera as previas anonimizadas sem abrir o MCP."""
+    """Gera as previas anonimizadas sem abrir o MCP.
+
+    A imagem original e gravada localmente (so para rastreabilidade); o MCP
+    nunca recebe ela. Somente a copia protegida segue para o OCR.
+    """
     lote = uuid.uuid4().hex[:12]
     email = str(usuario["email"])
 
@@ -124,7 +134,9 @@ async def anonimizar(
                     "webp, pdf ou zip) foi enviado."
                 ),
             )
-        resultados = await anonimizacao_service.processar_lote(imagens, lote)
+        resultados = await anonimizacao_service.processar_lote(
+            imagens, lote, modelo=modelo
+        )
     finally:
         _SEMAFORO_PROCESSAMENTO.release()
 
@@ -154,13 +166,53 @@ async def anonimizar(
                 artefato=artefato,
                 texto_cabecalho=resultado.texto_cabecalho,
                 geometria=resultado.geometria,
+                dados_originais=dados,
+                estado=previa_service.AGUARDANDO_REVISAO,
+                sha256_protegido=resultado.sha256_protegido,
+                versao=resultado.versao,
+                regioes_extras=resultado.regioes_extras,
+                regioes_protegidas=resultado.regioes_protegidas,
             )
             itens.append(
                 ItemPrevia(
                     id=previa.id,
                     nome=nome,
-                    status="aprovada",
+                    status=previa.status,
                     url_previa=f"/anonimizar/{previa.id}/previa",
+                    aviso=resultado.aviso_ancora,
+                )
+            )
+        elif getattr(resultado, "tratamento_necessario", False):
+            # Tratamento local nao pode ser executado (ex.: modelo estrutural
+            # nao instalado). A imagem vai para revisao humana sem previsao.
+            previa = repo.armazenar(
+                lote=lote,
+                modelo=modelo,
+                usuario=email,
+                nome_original=nome,
+                id_opaco=resultado.id_opaco or "",
+                sha256_original=hashlib.sha256(dados).hexdigest(),
+                artefato=None,
+                texto_cabecalho=None,
+                geometria=None,
+                dados_originais=dados,
+                estado=previa_service.AGUARDANDO_TRATAMENTO,
+                codigo=(
+                    resultado.codigo_falha.value
+                    if resultado.codigo_falha is not None
+                    else "ANONYMIZATION_ERROR"
+                ),
+                mensagem=resultado.mensagem,
+            )
+            itens.append(
+                ItemPrevia(
+                    id=previa.id,
+                    nome=nome,
+                    status="aguardando_tratamento",
+                    codigo=previa.codigo,
+                    mensagem=previa.mensagem,
+                    url_previa=None,
+                    tratamento_necessario=True,
                 )
             )
         else:
@@ -209,6 +261,12 @@ def obter_previa(
     except previa_service.ErroPrevia as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    if item.artefato is None:
+        raise HTTPException(
+            status_code=404,
+            detail="A copia protegida nao esta disponivel para esta previa.",
+        )
+
     return Response(
         content=item.artefato.dados,
         media_type="image/png",
@@ -233,6 +291,10 @@ def _resultado_aprovado(
         verificacao_sensiveis="ok",
         verificacao_integridade="ok",
         id_opaco=item.id_opaco,
+        sha256_protegido=item.sha256_protegido,
+        versao=item.versao,
+        regioes_extras=item.regioes_extras,
+        regioes_protegidas=item.regioes_protegidas,
     )
 
 
@@ -241,7 +303,13 @@ async def aprovar(
     pedido: PedidoAprovacao,
     usuario: dict[str, object] = Depends(autenticacao.exigir_csrf),
 ) -> ResultadoProcessamento | JSONResponse:
-    """Envia ao MCP somente os artefatos aprovados pelo usuario."""
+    """Envia ao MCP somente os artefatos aprovados pelo usuario.
+
+    Valida o hash da imagem protegida (sha256_protegido) e o estado de cada
+    previa. Somente previas em ``aguardando_revisao`` ou ``aprovada`` sao
+    aceitas. A aprovacao marca o estado como ``enviando_mcp`` e, ao concluir,
+    como ``processada``.
+    """
     email = str(usuario["email"])
     nome_usuario = str(usuario.get("nome") or email)
 
@@ -326,10 +394,26 @@ async def aprovar(
                     status_code=400,
                     detail="Previa nao pertence ao lote informado.",
                 )
-            if item.status != "pendente":
+            if item.estado not in {previa_service.AGUARDANDO_REVISAO, previa_service.APROVADA}:
                 raise HTTPException(
-                    status_code=409, detail="Previa ja foi processada."
+                    status_code=409,
+                    detail=(
+                        f"Previa nao esta disponivel para aprovacao "
+                        f"(estado={item.estado})."
+                    ),
                 )
+            # Valida o hash da copia protegida: se mudou, invalida a aprovacao
+            # anterior e exige revisao novamente.
+            if item.sha256_protegido and item.artefato is not None:
+                hash_atual = hashlib.sha256(item.artefato.dados).hexdigest()
+                if hash_atual != item.sha256_protegido:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            "A copia protegida foi alterada apos a aprovacao. "
+                            "Reprocesse e revise a imagem antes de aprovar."
+                        ),
+                    )
             aprovadas.append(
                 (
                     item.nome_original,
@@ -386,6 +470,10 @@ async def aprovar(
             exc.detail,
             pedido.lote,
         )
+        repo.marcar_estado(
+            pedido.ids, previa_service.FALHA, usuario=email,
+            motivo=str(exc.detail),
+        )
         raise
     except Exception as exc:  # noqa: BLE001
         _registrar_falha(
@@ -396,6 +484,177 @@ async def aprovar(
             exc,
             pedido.lote,
         )
+        repo.marcar_estado(
+            pedido.ids, previa_service.FALHA, usuario=email,
+            motivo=type(exc).__name__,
+        )
         raise
     finally:
         _SEMAFORO_PROCESSAMENTO.release()
+
+
+@router.post("/anonimizar/{previa_id}/aprovar", response_model=ResultadoProcessamento)
+def aprovar_previa(
+    previa_id: str,
+    usuario: dict[str, object] = Depends(autenticacao.exigir_csrf),
+) -> JSONResponse:
+    """Aprova uma unica previa por imagem (POST por item).
+
+    Invalida qualquer aprovacao anterior se o hash da copia protegida mudou.
+    Marca o estado como ``aprovada``.
+    """
+    email = str(usuario["email"])
+    try:
+        item = previa_service.repositorio().obter(previa_id, usuario=email)
+    except previa_service.ErroPrevia as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    if item.estado not in {
+        previa_service.AGUARDANDO_TRATAMENTO,
+        previa_service.AGUARDANDO_REVISAO,
+        previa_service.REPROVADA,
+    }:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Previa nao esta disponivel para aprovacao (estado={item.estado}).",
+        )
+
+    # Se o hash mudou (nova versao), invalida aprovacao anterior e exige
+    # revisao novamente (estado volta para aguardando_revisao).
+    if item.sha256_protegido and item.artefato is not None:
+        hash_atual = hashlib.sha256(item.artefato.dados).hexdigest()
+        if hash_atual != item.sha256_protegido:
+            previa_service.repositorio().atualizar(
+                previa_id,
+                usuario=email,
+                estado=previa_service.AGUARDANDO_REVISAO,
+                versao=item.versao + 1,
+                codigo="HASH_ALTERADO",
+                mensagem="A copia protegida foi alterada apos a aprovacao anterior.",
+            )
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "detail": (
+                        "A copia protegida mudou apos a aprovacao anterior. "
+                        "A imagem voltou para revisao; aprove novamente."
+                    ),
+                    "previa_id": previa_id,
+                    "estado": previa_service.AGUARDANDO_REVISAO,
+                    "versao": item.versao + 1,
+                },
+            )
+
+    atualizada = previa_service.repositorio().atualizar(
+        previa_id,
+        usuario=email,
+        estado=previa_service.APROVADA,
+        sha256_protegido=item.sha256_protegido,
+        versao=item.versao + 1,
+        codigo=None,
+        mensagem=None,
+    )
+    return JSONResponse(
+        status_code=200,
+        content={
+            "detail": "Previa aprovada.",
+            "previa_id": previa_id,
+            "estado": atualizada.estado,
+            "versao": atualizada.versao,
+        },
+    )
+
+
+@router.post("/anonimizar/{previa_id}/reprovar", response_model=ResultadoProcessamento)
+def reprovar_previa(
+    previa_id: str,
+    usuario: dict[str, object] = Depends(autenticacao.exigir_csrf),
+) -> JSONResponse:
+    """Reprova uma unica previa, voltando ao estado ``reprovada``.
+
+    Invalida qualquer aprovacao anterior. O usuario pode reenviar o arquivo
+    e gerar uma nova previa.
+    """
+    email = str(usuario["email"])
+    try:
+        item = previa_service.repositorio().obter(previa_id, usuario=email)
+    except previa_service.ErroPrevia as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    atualizada = previa_service.repositorio().atualizar(
+        previa_id,
+        usuario=email,
+        estado=previa_service.REPROVADA,
+        versao=item.versao + 1,
+        motivo_reprovacao="Usuario reprovou a ocultacao.",
+        codigo="REPROVACAO_USUARIO",
+        mensagem="Ocultacao considerada incompleta ou incorreta pelo usuario.",
+    )
+    return JSONResponse(
+        status_code=200,
+        content={
+            "detail": "Previa reprovada. O usuario pode ajustar e gerar uma nova versao.",
+            "previa_id": previa_id,
+            "estado": atualizada.estado,
+            "versao": atualizada.versao,
+        },
+    )
+
+
+@router.post("/anonimizar/{previa_id}/reprocessar", response_model=ResultadoProcessamento)
+def reprocessar_previa(
+    previa_id: str,
+    usuario: dict[str, object] = Depends(autenticacao.exigir_csrf),
+) -> JSONResponse:
+    """Reprocessa uma previa reprovada, regenerando a imagem protegida.
+
+    Aceita regioes extras em coordenadas da imagem original via corpo JSON
+    (``regioes_extras``) para tentar cobrir areas que ficaram descobertas.
+    A versao e incrementada, invalidando qualquer aprovacao anterior.
+    """
+    email = str(usuario["email"])
+    try:
+        item = previa_service.repositorio().obter(previa_id, usuario=email)
+    except previa_service.ErroPrevia as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    if item.estado != previa_service.REPROVADA:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Previa nao esta reprovada (estado={item.estado}). "
+                "Apenas previas reprovadas podem ser reprocessadas."
+            ),
+        )
+
+    nova = previa_service.repositorio().atualizar(
+        previa_id,
+        usuario=email,
+        versao=item.versao + 1,
+        estado=previa_service.AGUARDANDO_REVISAO,
+        motivo_reprovacao=None,
+        codigo=None,
+        mensagem=None,
+        sha256_protegido="",
+    )
+
+    # Remove o antigo arquivo protegido para forcar re-anonimizacao no proximo
+    # passo (o fluxo do frontend deve reenviar o arquivo para gerar uma nova
+    # copia protegida).
+    if item.arquivo_protegido:
+        from ..anonimizacao import armazenamento as _armazenamento
+
+        _armazenamento.remover_arquivo(item.lote, item.arquivo_protegido)
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "detail": (
+                "Previa reprocessada. Envie novamente o arquivo para gerar "
+                "uma nova copia protegida e revise-a."
+            ),
+            "previa_id": previa_id,
+            "estado": nova.estado,
+            "versao": nova.versao,
+        },
+    )

@@ -71,7 +71,7 @@ class TestPipelineAnonimizado(unittest.IsolatedAsyncioTestCase):
             chamou = True
             yield object()
 
-        async def bloquear(_imagens, _lote=None):
+        async def bloquear(_imagens, _lote=None, modelo=None):
             return [
                 ResultadoAnonimizacao.bloqueado(
                     "a.jpg", CodigoFalha.TABLE_NOT_DETECTED
@@ -98,7 +98,7 @@ class TestPipelineAnonimizado(unittest.IsolatedAsyncioTestCase):
         original_bloqueada = b"imagem-bloqueada"
         recebidos: list[bytes] = []
 
-        async def anonimizar(imagens, _lote=None):
+        async def anonimizar(imagens, _lote=None, modelo=None):
             resultados = []
             for nome, dados in imagens:
                 if dados == original_bloqueada:

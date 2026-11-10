@@ -37,7 +37,9 @@ def resultado_anonimizado_aprovado(
 
 
 async def processar_lote_aprovado(
-    imagens: list[tuple[str, bytes]], lote: str | None = None
+    imagens: list[tuple[str, bytes]],
+    lote: str | None = None,
+    modelo: str | None = None,
 ) -> list[ResultadoAnonimizacao]:
     """Substitui a anonimizacao real nos testes de pipeline/OCR."""
     return [

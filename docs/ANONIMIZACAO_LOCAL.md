@@ -31,10 +31,11 @@ PDF? -> rasteriza localmente (1 página, 200 dpi)
 PP-StructureV3 local (CPU por padrão)
   |
   v
-detecta tabela + título da seção (Quinzena / Dias+Intervalo)
-  |  (fallback: primeira linha de rótulos)
+detecta tabela + âncora de recorte do modelo
+  |  (1/3: topo da faixa da quinzena; 2: topo do bloco do cabeçalho)
+  |  (1/3 sem âncora: fallback na primeira linha de rótulos + aviso)
   v
-corta o cabeçalho na linha do título, inclusive
+corta o cabeçalho na âncora, inclusive
   |
   v
 remove/valida campos sensíveis dentro da tabela
@@ -56,7 +57,8 @@ lote continua com as demais imagens.
 
 | Arquivo | Responsabilidade |
 |---|---|
-| `detector.py` | Carrega o PP-StructureV3 uma única vez e normaliza a saída; acha a linha de rótulos e o fim da tabela. |
+| `detector.py` | Carrega o PP-StructureV3 uma única vez e normaliza a saída; aplica a âncora do modelo e acha o fim da tabela. |
+| `ancoras.py` | Regras de limite superior por modelo: faixa da quinzena (1/3) e bloco de cabeçalho com `Saída` (2). |
 | `recorte.py` | Calcula o recorte com margem, recorta e cobre campos sensíveis. |
 | `validacao.py` | Classifica texto, decide o que redigir/bloquear, valida o recorte e a saída. |
 | `metadados.py` | Regrava a imagem sem EXIF/metadados. |
@@ -65,7 +67,21 @@ lote continua com as demais imagens.
 | `service.py` | Orquestra o lote, aplica timeout/concorrência e registra logs opacos. |
 
 Os parsers `modelo1` a `modelo5` continuam separados. A camada comum não conhece
-regras de horário de nenhum modelo.
+regras de horário de nenhum modelo; `ancoras.py` conhece apenas o limite físico
+do recorte de cada modelo.
+
+### Regras de limite
+
+- **Modelos 1 e 3:** procuram `1ª/2ª Quinzena` (com variações de OCR) e cortam
+  no **topo da faixa colorida**, não no topo do texto. A faixa e os registros
+  abaixo são preservados. Sem a âncora, usam a primeira linha de rótulos e
+  aprovam com o aviso `ANCHOR_FALLBACK`; se o fallback também falhar, bloqueiam
+  com `ANCHOR_NOT_FOUND`. Mais de uma faixa associada à tabela bloqueia com
+  `ANCHOR_NOT_CONFIDENT`.
+- **Modelo 2:** corta no topo do bloco de cabeçalho que contém `Saída`, preservando
+  `Dia`, `Entrada`, `Saída`, `Intervalo`, `Hora Extra` e `Assinatura`. Não há
+  corte horizontal: `x` e largura da tabela permanecem os detectados.
+- **Modelos 4 e 5:** mantêm o caminho genérico anterior, sem âncora por modelo.
 
 ## 4. Instalação
 
@@ -130,7 +146,7 @@ paralelo.
 | Variável | Padrão | Efeito |
 |---|---|---|
 | `PONTOFACIL_ANON_CONCORRENCIA` | `1` | Inferências locais simultâneas (1–4). |
-| `PONTOFACIL_ANON_TIMEOUT` | `180` | Tempo máximo por imagem, em segundos. |
+| `PONTOFACIL_ANON_TIMEOUT` | `400` | Tempo máximo por imagem, em segundos. |
 | `PONTOFACIL_ANON_PDF_DPI` | `200` | DPI da rasterização local do PDF (72–400). |
 | `PONTOFACIL_ANON_MARGEM_PX` | `6` | Margem ao redor da tabela recortada (0–40). |
 | `PONTOFACIL_ANON_DISPOSITIVO` | `cpu` | `cpu` ou `gpu` (GPU exige Paddle CUDA). |
@@ -149,11 +165,16 @@ Os códigos aparecem nos avisos da API e nos logs, nunca com dados pessoais:
 
 - `HEADER_NOT_DETECTED`, `TABLE_NOT_DETECTED`,
   `TABLE_REGION_NOT_CONFIDENT`
+- `ANCHOR_NOT_FOUND`, `ANCHOR_NOT_CONFIDENT`
 - `CROP_OUT_OF_BOUNDS`, `POSSIBLE_ROW_LOSS`
 - `SENSITIVE_CONTENT_REMAINS`, `SENSITIVE_FIELD_CONFLICT`
 - `OUTPUT_IMAGE_INVALID`, `INVALID_INPUT`, `UNSUPPORTED_FORMAT`
 - `STRUCTURE_MODEL_ERROR`, `ANONYMIZATION_TIMEOUT`, `INTERNAL_ERROR`
 - `PDF_RASTERIZATION_ERROR`, `UNSUPPORTED_MULTIPAGE_PDF`
+
+`ANCHOR_FALLBACK` não é bloqueio: é um aviso devolvido em `aviso_ancora` e
+`ItemPrevia.aviso` quando os Modelos 1/3 usam a linha de rótulos no lugar da
+faixa da quinzena. A aprovação humana antes do MCP continua obrigatória.
 
 ## 8. Retenção e logs
 
@@ -174,10 +195,23 @@ Testes específicos da camada:
 ```powershell
 .\.venv\Scripts\python.exe -m unittest `
   backend.tests.test_anonimizacao_detector `
+  backend.tests.test_anonimizacao_ancoras `
   backend.tests.test_anonimizacao_recorte `
   backend.tests.test_anonimizacao_privacidade `
   backend.tests.test_anonimizacao_integracao
 ```
+
+Testes opt-in com as imagens reais (não versionadas):
+
+```powershell
+$env:PONTOFACIL_TESTAR_IMAGENS_REAIS="1"
+.\.venv-anon\Scripts\python.exe -m unittest `
+  backend.tests.test_anonimizacao_exemplos_reais -v
+```
+
+As comparações antes/depois são gravadas em `backend/_out/comparacoes/`
+(ignorado pelo git). Quando a imagem real bloqueia, grava-se apenas o motivo no
+arquivo `*_bloqueada.txt`.
 
 Suíte completa:
 

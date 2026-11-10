@@ -202,7 +202,8 @@ def executar(args: argparse.Namespace) -> Path:
     # aprovada, nunca o caminho ou os bytes originais.
     resultados = asyncio.run(
         anonimizacao_service.processar_lote(
-            [(caminho.name, caminho.read_bytes())]
+            [(caminho.name, caminho.read_bytes())],
+            modelo="modelo-1",
         )
     )
     anonimizado = resultados[0] if resultados else None

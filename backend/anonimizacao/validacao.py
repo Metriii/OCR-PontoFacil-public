@@ -134,12 +134,44 @@ def _mesma_coluna(a: Caixa, b: Caixa) -> bool:
     return not (a.x2 <= b.x or b.x2 <= a.x)
 
 
-def analisar_sensiveis(deteccao: DeteccaoEstrutural) -> AnaliseSensiveis:
+def _chave_caixa(caixa: Caixa) -> tuple[float, float, float, float]:
+    """Identidade geometrica usada para reconhecer caixas ja redigidas."""
+    return (
+        round(caixa.x, 1),
+        round(caixa.y, 1),
+        round(caixa.x2, 1),
+        round(caixa.y2, 1),
+    )
+
+
+def _caixa_covered(caixa: Caixa, extras: tuple[tuple[float, float, float, float], ...]) -> bool:
+    """True quando uma regiao extra cobre (quase) toda a caixa sensível."""
+    if caixa.area <= 0:
+        return False
+    for ex in extras:
+        ex_caixa = Caixa(x=ex[0], y=ex[1], largura=ex[2], altura=ex[3])
+        if ex_caixa.contem(caixa, tolerancia=2):
+            return True
+        if ex_caixa.interseccao(caixa) / caixa.area >= 0.9:
+            return True
+    return False
+
+
+def analisar_sensiveis(
+    deteccao: DeteccaoEstrutural,
+    *,
+    extras: tuple[tuple[float, float, float, float], ...] = (),
+) -> AnaliseSensiveis:
     """Decide o que redigir e o que bloqueia a folha.
 
     Politica (Opcao A): texto acima do limite do cabecalho e redigido (ocultado).
     Textos abaixo do limite sao preservados como dado de ponto.
     Se ha conflito com horarios, bloqueia a folha.
+
+    ``extras`` sao regioes informadas pelo usuario (coordenadas da imagem
+    original) que devem ser ocultadas adicionalmente. Elas podem cobrir um
+    campo sensível que estaria em conflito, permitindo que a folha siga para
+    revisao humana.
     """
     caixas = _caixas_na_tabela(deteccao)
     if not caixas:
@@ -158,7 +190,7 @@ def analisar_sensiveis(deteccao: DeteccaoEstrutural) -> AnaliseSensiveis:
     straddling = [
         caixa
         for caixa in caixas
-        if caixa.y < limite < caixa.y2
+        if caixa.y < limite <= caixa.y2
         and not (
             _parece_horario(caixa.texto)
             or _parece_dia(caixa.texto)
@@ -188,6 +220,11 @@ def analisar_sensiveis(deteccao: DeteccaoEstrutural) -> AnaliseSensiveis:
             _mesma_linha(caixa, dado) or caixa.intersecta(dado)
             for dado in dados
         ):
+            if _caixa_covered(caixa, extras):
+                # Usuario marcou uma regiao que cobre o conflito; segue para
+                # revisao humana em vez de bloquear.
+                redigir.append(caixa)
+                continue
             conflitou = True
             motivo = "Sobra de cabecalho encosta em dados da tabela."
             continue
@@ -210,7 +247,7 @@ def analisar_sensiveis(deteccao: DeteccaoEstrutural) -> AnaliseSensiveis:
         if any(
             _mesma_linha(caixa, horario) or _mesma_coluna(caixa, horario)
             for horario in horarios
-        ):
+        ) and not _caixa_covered(caixa, extras):
             conflitou = True
             motivo = "Campo identificavel compartilha linha/coluna com horarios."
             continue
@@ -298,8 +335,13 @@ def validar_recorte(
                 mensagem="Uma celula da tabela ficou fora do recorte.",
             )
 
+    redigidas_chaves = {_chave_caixa(caixa) for caixa in redigidas}
     for caixa in deteccao.caixas_texto:
         if not caixa.texto:
+            continue
+        # Uma caixa redigida foi pintada de branco; a cobertura e conferida por
+        # ``redacao_efetiva``. Nao faz sentido acusa-la como texto visivel.
+        if _chave_caixa(caixa) in redigidas_chaves:
             continue
         if caixa.y2 <= tabela.y + 2 and recorte.intersecta(caixa):
             return ResultadoValidacao(

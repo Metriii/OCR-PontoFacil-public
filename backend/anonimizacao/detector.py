@@ -18,6 +18,7 @@ import unicodedata
 from io import BytesIO
 from typing import Any
 
+from . import ancoras
 from .schemas import (
     Caixa,
     CelulaTabela,
@@ -639,25 +640,96 @@ def _limitar_rodape(tabela: Caixa, caixas_texto: tuple[Caixa, ...]) -> float | N
     return min(tabela.y2, limite)
 
 
-def _extrair(
-    data: dict[str, Any], largura: int, altura: int
-) -> DeteccaoEstrutural:
-    tabelas = _tabelas(data)
-    caixas_texto = tuple(_blocos_texto(data))
+_MODELOS_COM_ANCORA = {"modelo-1", "modelo-2", "modelo-3"}
 
-    # --- Etapa 1: localizar o titulo de secao que define o inicio do recorte ---
-    # A ordem importa: cartoes com "Quinzena" (Ana Vitoria/Vanessa) sao
-    # testados primeiro porque tambem exibem "Intervalo" como rotulo de coluna.
-    # A regra da Amanda exige "Dias", o que impede que o "Intervalo" desses
-    # cartoes seja confundido com o titulo dela. Nenhuma regra usa nome de
-    # pessoa ou de arquivo.
+
+def _inicio_generico(
+    tabela: Caixa, caixas_texto: tuple[Caixa, ...]
+) -> float | None:
+    """Caminho antigo para os Modelos 4/5 e para chamadas sem modelo.
+
+    Localiza o titulo de secao e, na ausencia dele, a linha de rotulos da
+    tabela. Nenhuma regra usa nome de pessoa ou de arquivo.
+    """
     termos_quinzena = ["Quinzena", "1\u00aa Quinzena", "2\u00aa Quinzena"]
-
     titulo_secao_y = _localizar_titulo_secao(caixas_texto, termos_quinzena)
     if titulo_secao_y is None:
         titulo_secao_y = _localizar_titulo_amanda(caixas_texto)
 
-    # --- Etapa 2: Detectar tabela e ajustar recorte ---
+    if titulo_secao_y is not None:
+        # O titulo deve estar na faixa imediatamente acima da tabela. Uma
+        # ocorrencia muito acima (por exemplo, a palavra "Dias" no cabecalho
+        # pessoal) nao pode puxar o recorte para cima e reexpor nome/CPF.
+        # A tolerancia e relativa a altura da tabela, nunca uma coordenada fixa.
+        tolerancia_titulo = max(80.0, tabela.altura * 0.25)
+        if not (tabela.y - tolerancia_titulo <= titulo_secao_y < tabela.y2):
+            titulo_secao_y = None
+
+    if titulo_secao_y is not None:
+        return max(0.0, titulo_secao_y)
+
+    topo = _detectar_inicio_tabela(tabela, caixas_texto)
+    if topo is None:
+        return None
+    return max(0.0, topo - 4.0)
+
+
+def _resolver_inicio(
+    modelo: str | None,
+    tabela: Caixa,
+    caixas_texto: tuple[Caixa, ...],
+    celulas: tuple[CelulaTabela, ...],
+    linhas: tuple[float, ...],
+    imagem: Any | None,
+) -> tuple[float | None, str | None]:
+    """Resolve o ``y`` inicial do recorte e um eventual aviso.
+
+    Os Modelos 1/2/3 usam a ancora especifica do modelo. Se a ancora do
+    Modelo 1/3 nao existir (``ANCHOR_NOT_FOUND``), o fallback de rotulos e
+    aceito com o aviso ``ANCHOR_FALLBACK``; qualquer outra falha bloqueia.
+    """
+    if modelo not in _MODELOS_COM_ANCORA:
+        return _inicio_generico(tabela, caixas_texto), None
+
+    try:
+        ancora = ancoras.localizar_limite(
+            modelo,
+            tabela=tabela,
+            caixas_texto=caixas_texto,
+            celulas=celulas,
+            linhas=linhas,
+            imagem=imagem,
+        )
+    except ancoras.ErroAncora as exc:
+        if (
+            modelo in {"modelo-1", "modelo-3"}
+            and exc.codigo is CodigoFalha.ANCHOR_NOT_FOUND
+        ):
+            topo = _detectar_inicio_tabela(tabela, caixas_texto)
+            if topo is None:
+                raise ErroDeteccao(
+                    CodigoFalha.ANCHOR_NOT_FOUND,
+                    "Nao foi possivel localizar o inicio da tabela de ponto.",
+                ) from exc
+            return max(0.0, topo - 4.0), "ANCHOR_FALLBACK"
+        raise ErroDeteccao(exc.codigo, exc.mensagem) from exc
+
+    if ancora is None:
+        return _inicio_generico(tabela, caixas_texto), None
+    return max(0.0, ancora.y), None
+
+
+def _extrair(
+    data: dict[str, Any],
+    largura: int,
+    altura: int,
+    *,
+    modelo: str | None = None,
+    imagem: Any | None = None,
+) -> DeteccaoEstrutural:
+    tabelas = _tabelas(data)
+    caixas_texto = tuple(_blocos_texto(data))
+
     if not tabelas:
         return DeteccaoEstrutural(
             largura=largura,
@@ -676,53 +748,44 @@ def _extrair(
     y2 = min(float(altura), tabela.y2)
     tabela = Caixa(x=x1, y=y1, largura=max(0.0, x2 - x1), altura=max(0.0, y2 - y1))
 
-    # Ajusta o inicio do recorte conforme o titulo de secao encontrado.
-    cabecalho: Caixa | None = None
-    if titulo_secao_y is not None:
-        # O titulo deve estar na faixa imediatamente acima da tabela. Uma
-        # ocorrencia muito acima (por exemplo, a palavra "Dias" no cabecalho
-        # pessoal) nao pode puxar o recorte para cima e reexpor nome/CPF.
-        # A tolerancia e relativa a altura da tabela, nunca uma coordenada fixa.
-        tolerancia_titulo = max(80.0, tabela.altura * 0.25)
-        if not (tabela.y - tolerancia_titulo <= titulo_secao_y < tabela.y2):
-            titulo_secao_y = None
+    # As ancoras precisam da tabela inteira (inclusive as celulas do cabecalho)
+    # antes do ajuste do recorte.
+    celulas_completas = _celulas(tabela, tabelas)
+    linhas_completas = _linhas_horizontais(tabela, celulas_completas)
 
-    if titulo_secao_y is not None:
-        # Comeca na linha do titulo, inclusive. O cabecalho cobre de y=0 ate
-        # essa linha, o que mantem a validacao do servico (HEADER_NOT_DETECTED)
-        # e evita que o recorte avance sobre dados pessoais acima do titulo.
-        inicio = max(0.0, titulo_secao_y)
-        if 8.0 <= inicio < tabela.y2:
-            tabela = Caixa(
-                x=tabela.x,
-                y=inicio,
-                largura=tabela.largura,
-                altura=tabela.y2 - inicio,
-            )
-            cabecalho = Caixa(
-                x=0.0,
-                y=0.0,
-                largura=float(largura),
-                altura=inicio,
-            )
-    else:
-        # Comportamento anterior: detecta a linha de rotulos e corta a partir dela.
-        topo = _detectar_inicio_tabela(tabela, caixas_texto)
-        if topo is not None:
-            inicio = max(0.0, topo - 4.0)
-            if 8.0 <= inicio < tabela.y2:
-                tabela = Caixa(
-                    x=tabela.x,
-                    y=inicio,
-                    largura=tabela.largura,
-                    altura=tabela.y2 - inicio,
-                )
-                cabecalho = Caixa(
-                    x=0.0,
-                    y=0.0,
-                    largura=float(largura),
-                    altura=inicio,
-                )
+    inicio, aviso_ancora = _resolver_inicio(
+        modelo,
+        tabela,
+        caixas_texto,
+        celulas_completas,
+        linhas_completas,
+        imagem,
+    )
+
+    cabecalho: Caixa | None = None
+    if inicio is not None and 8.0 <= inicio < tabela.y2:
+        # Comeca na ancora, inclusive. O cabecalho cobre de y=0 ate essa
+        # linha, o que mantem a validacao do servico (HEADER_NOT_DETECTED) e
+        # evita que o recorte avance sobre dados pessoais acima da ancora.
+        tabela = Caixa(
+            x=tabela.x,
+            y=inicio,
+            largura=tabela.largura,
+            altura=tabela.y2 - inicio,
+        )
+        cabecalho = Caixa(
+            x=0.0,
+            y=0.0,
+            largura=float(largura),
+            altura=inicio,
+        )
+    elif inicio is not None and modelo in _MODELOS_COM_ANCORA:
+        # Modelos com ancora nao podem recuar para fora da tabela: seria
+        # impossivel garantir que o cabecalho foi removido.
+        raise ErroDeteccao(
+            CodigoFalha.ANCHOR_NOT_CONFIDENT,
+            "O inicio calculado nao esta dentro da tabela de ponto.",
+        )
 
     # Limita o rodape após o ajuste do recorte
     if cabecalho is not None:
@@ -748,17 +811,26 @@ def _extrair(
         linhas_horizontais=linhas,
         confianca=confianca,
         modelo_versao=_versao,
+        aviso_ancora=aviso_ancora,
     )
 
 
-def detectar(dados: bytes) -> DeteccaoEstrutural:
-    """Executa o PP-StructureV3 local e normaliza o resultado."""
+def detectar(
+    dados: bytes,
+    modelo: str | None = None,
+) -> DeteccaoEstrutural:
+    """Executa o PP-StructureV3 local e normaliza o resultado.
+
+    ``modelo`` seleciona a ancora de recorte (``modelo-1``/``modelo-2``/
+    ``modelo-3``). Sem ele, ou para os Modelos 4/5, o caminho generico anterior
+    e preservado.
+    """
     from PIL import Image
 
     try:
-        with Image.open(BytesIO(dados)) as imagem:
-            largura, altura = imagem.size
-            imagem = imagem.convert("RGB")
+        with Image.open(BytesIO(dados)) as origem:
+            largura, altura = origem.size
+            imagem = origem.convert("RGB")
             try:
                 import numpy as np
 
@@ -773,9 +845,9 @@ def detectar(dados: bytes) -> DeteccaoEstrutural:
             "Nao foi possivel abrir a imagem para deteccao.",
         ) from exc
 
-    modelo = _carregar_modelo()
+    estrutura = _carregar_modelo()
     try:
-        saida = modelo.predict(entrada)
+        saida = estrutura.predict(entrada)
         if not isinstance(saida, (list, tuple)):
             saida = list(saida)
         if not saida:
@@ -784,7 +856,13 @@ def detectar(dados: bytes) -> DeteccaoEstrutural:
                 "O modelo estrutural nao retornou resultado.",
             )
         data = _como_dicionario(saida[0])
-        return _extrair(data, largura, altura)
+        return _extrair(
+            data,
+            largura,
+            altura,
+            modelo=modelo,
+            imagem=imagem,
+        )
     except ErroDeteccao:
         raise
     except Exception as exc:  # noqa: BLE001

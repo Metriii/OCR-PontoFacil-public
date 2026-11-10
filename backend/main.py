@@ -34,6 +34,7 @@ from . import (
     processamentos,
     sincronizacao_excel,
 )
+from .anonimizacao import previa
 from .rotas import auth, download, planilhas, processar, registros
 from .rotas import admin_usuarios
 from .rotas import anonimizacao
@@ -105,6 +106,7 @@ def _startup() -> None:
     autenticacao.inicializar()
     auditoria.inicializar()
     processamentos.inicializar()
+    previa.inicializar()
     autenticacao.limpar_expirados()
     excel.limpar_planilhas_individuais(config.DIR_SAIDA)
     sincronizacao_excel.iniciar()

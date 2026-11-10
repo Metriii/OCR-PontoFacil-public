@@ -167,7 +167,9 @@ class TestServicoPrivacidade(unittest.IsolatedAsyncioTestCase):
         deteccao = deteccao_sintetica()
 
         with patch.object(
-            service.detector, "detectar", lambda _dados: deteccao
+            service.detector,
+            "detectar",
+            lambda _dados, modelo=None: deteccao,
         ):
             resultados = await service.processar_lote(
                 [("folha.png", criar_folha_sintetica())]
@@ -198,7 +200,9 @@ class TestServicoPrivacidade(unittest.IsolatedAsyncioTestCase):
         )
 
         with patch.object(
-            service.detector, "detectar", lambda _dados: deteccao
+            service.detector,
+            "detectar",
+            lambda _dados, modelo=None: deteccao,
         ):
             resultados = await service.processar_lote(
                 [("folha.png", criar_folha_sintetica())]
@@ -216,7 +220,9 @@ class TestServicoPrivacidade(unittest.IsolatedAsyncioTestCase):
         sem_tabela = replace(deteccao, tabela=None, cabecalho=None)
 
         with patch.object(
-            service.detector, "detectar", lambda _dados: sem_tabela
+            service.detector,
+            "detectar",
+            lambda _dados, modelo=None: sem_tabela,
         ):
             resultados = await service.processar_lote(
                 [("folha.png", criar_folha_sintetica())]

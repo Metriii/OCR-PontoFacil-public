@@ -55,6 +55,7 @@ class _Fluxo:
     avisos_estrutura: Callable[[list[list[str]]], list[str]] | None = None
     validar_layout: Callable[[list[list[str]], str], str | None] | None = None
     salvar_ocr_sem_grid: bool = False
+    modelo: str | None = None
 
 
 _FLUXO_MODELO1 = _Fluxo(
@@ -64,6 +65,7 @@ _FLUXO_MODELO1 = _Fluxo(
     linhas_dia=parser.linhas_dia,
     map_registro=map_registro,
     manter_registro=lambda _registro: True,
+    modelo="modelo-1",
 )
 
 _FLUXO_MODELO2 = _Fluxo(
@@ -77,6 +79,7 @@ _FLUXO_MODELO2 = _Fluxo(
     jornada_prevista=modelo2_parser.jornada_prevista,
     map_folha=modelo2_mapper.mapear_folha,
     preparar_imagem=modelo2_imagem.preparar_imagem,
+    modelo="modelo-2",
 )
 
 _FLUXO_MODELO3 = _Fluxo(
@@ -87,6 +90,7 @@ _FLUXO_MODELO3 = _Fluxo(
     map_registro=modelo3_mapper.map_registro,
     manter_registro=lambda _registro: True,
     map_folha=modelo3_mapper.mapear_folha,
+    modelo="modelo-3",
 )
 
 _FLUXO_MODELO4 = _Fluxo(
@@ -101,6 +105,7 @@ _FLUXO_MODELO4 = _Fluxo(
     diagnostico=modelo4_parser.diagnostico,
     avisos_estrutura=modelo4_parser.avisos_estrutura,
     validar_layout=modelo4_parser.validar_layout,
+    modelo="modelo-4",
 )
 
 _FLUXO_MODELO5 = _Fluxo(
@@ -116,6 +121,7 @@ _FLUXO_MODELO5 = _Fluxo(
     avisos_estrutura=modelo5_parser.avisos_estrutura,
     validar_layout=modelo5_parser.validar_layout,
     salvar_ocr_sem_grid=True,
+    modelo="modelo-5",
 )
 
 _FLUXOS: dict[str, _Fluxo] = {
@@ -405,7 +411,9 @@ async def _processar_com(
 
     # A fronteira de privacidade fica antes de abrir o MCP: a partir daqui so
     # existem artefatos aprovados pela anonimizacao local.
-    resultados_anon = await anonimizacao_service.processar_lote(imagens, lote)
+    resultados_anon = await anonimizacao_service.processar_lote(
+        imagens, lote, modelo=fluxo.modelo
+    )
     aprovadas: list[
         tuple[str, ArtefatoAnonimizado, ResultadoAnonimizacao, str]
     ] = []

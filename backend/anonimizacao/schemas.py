@@ -15,12 +15,15 @@ class StatusAnonimizacao(str, Enum):
     APPROVED = "approved"
     BLOCKED = "blocked"
     ERROR = "error"
+    PENDING_TREATMENT = "pending_treatment"
 
 
 class CodigoFalha(str, Enum):
     HEADER_NOT_DETECTED = "HEADER_NOT_DETECTED"
     TABLE_NOT_DETECTED = "TABLE_NOT_DETECTED"
     TABLE_REGION_NOT_CONFIDENT = "TABLE_REGION_NOT_CONFIDENT"
+    ANCHOR_NOT_FOUND = "ANCHOR_NOT_FOUND"
+    ANCHOR_NOT_CONFIDENT = "ANCHOR_NOT_CONFIDENT"
     CROP_OUT_OF_BOUNDS = "CROP_OUT_OF_BOUNDS"
     POSSIBLE_ROW_LOSS = "POSSIBLE_ROW_LOSS"
     SENSITIVE_CONTENT_REMAINS = "SENSITIVE_CONTENT_REMAINS"
@@ -110,6 +113,7 @@ class DeteccaoEstrutural:
     linhas_horizontais: tuple[float, ...] = ()
     confianca: float | None = None
     modelo_versao: str | None = None
+    aviso_ancora: str | None = None
 
 
 @dataclass(frozen=True)
@@ -161,6 +165,12 @@ class ResultadoAnonimizacao:
     mensagem: str | None = None
     modelo_versao: str | None = None
     id_opaco: str | None = None
+    sha256_protegido: str | None = None
+    versao: int = 1
+    regioes_extras: tuple[tuple[float, float, float, float], ...] = ()
+    regioes_protegidas: tuple[tuple[float, float, float, float], ...] = ()
+    tratamento_necessario: bool = False
+    aviso_ancora: str | None = None
 
     @property
     def aprovado(self) -> bool:

@@ -168,7 +168,7 @@ class TestProcessarAprovadas(unittest.IsolatedAsyncioTestCase):
         artefato = _artefato()
         recebidos: list[object] = []
 
-        async def anonimizar_nao_deveria(_imagens, _lote=None):
+        async def anonimizar_nao_deveria(_imagens, _lote=None, modelo=None):
             raise AssertionError("anonimizacao rodou duas vezes")
 
         async def ocr_falso(_sessao, dados, _preparar=None):
@@ -228,7 +228,7 @@ class TestRotasPrevia(unittest.TestCase):
         )
 
     def test_previa_lista_aprovadas_e_bloqueadas_sem_mcp(self) -> None:
-        async def anonimizar(imagens, _lote=None):
+        async def anonimizar(imagens, _lote=None, modelo=None):
             resultados = []
             for nome, dados in imagens:
                 if nome == "bloqueada.png":
@@ -282,7 +282,7 @@ class TestRotasPrevia(unittest.TestCase):
             self.assertEqual(alheia.status_code, 404)
 
     def test_aprovacao_envia_somente_os_ids_escolhidos(self) -> None:
-        async def anonimizar(imagens, _lote=None):
+        async def anonimizar(imagens, _lote=None, modelo=None):
             return [
                 _aprovado(nome, artefato=_artefato(dados, nome))
                 for nome, dados in imagens
@@ -345,7 +345,7 @@ class TestRotasPrevia(unittest.TestCase):
             )
 
     def test_aprovacao_exige_aceite_e_mantem_previa(self) -> None:
-        async def anonimizar(imagens, _lote=None):
+        async def anonimizar(imagens, _lote=None, modelo=None):
             return [
                 _aprovado(nome, artefato=_artefato(dados, nome))
                 for nome, dados in imagens
@@ -388,7 +388,7 @@ class TestRotasPrevia(unittest.TestCase):
             )
 
     def test_previa_de_outro_lote_e_recusada(self) -> None:
-        async def anonimizar(imagens, _lote=None):
+        async def anonimizar(imagens, _lote=None, modelo=None):
             return [
                 _aprovado(nome, artefato=_artefato(dados, nome))
                 for nome, dados in imagens

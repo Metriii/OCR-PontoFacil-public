@@ -121,6 +121,16 @@ ANON_PREVIA_MAX = max(
 )
 
 
+def dir_lotes() -> Path:
+    """Diretorio raiz dos lotes de anonimizacao.
+
+    Respeita ``PONTOFACIL_LOTES_DIR`` se definido, caso contrario usa
+    ``data/lotes/`` relativo ao diretorio de dados (``PONTOFACIL_DATA_DIR``).
+    """
+    padrao = DIR_DADOS / "lotes"
+    return Path(os.getenv("PONTOFACIL_LOTES_DIR", str(padrao)))
+
+
 def _booleano_env(nome: str, padrao: bool) -> bool:
     valor = os.getenv(nome)
     if valor is None:
@@ -343,6 +353,7 @@ def pastas_sincronizacao() -> list[Path]:
 def garantir_diretorios() -> None:
     DIR_SAIDA.mkdir(parents=True, exist_ok=True)
     DIR_DADOS.mkdir(parents=True, exist_ok=True)
+    dir_lotes().mkdir(parents=True, exist_ok=True)
     ARQUIVO_BANCO.parent.mkdir(parents=True, exist_ok=True)
     DIR_LOGS.mkdir(parents=True, exist_ok=True)
     if EMAIL_MODO == "arquivo":

@@ -8,6 +8,7 @@ recebe exclusivamente ``ArtefatoAnonimizado``.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import time
 import uuid
@@ -37,6 +38,8 @@ def _anonimizar_sync(
     nome_original: str,
     dados: bytes,
     id_opaco: str,
+    regioes_extras: tuple[tuple[float, float, float, float], ...] = (),
+    modelo: str | None = None,
 ) -> ResultadoAnonimizacao:
     if not dados:
         raise ErroAnon(CodigoFalha.INVALID_INPUT, "Arquivo vazio.")
@@ -48,7 +51,7 @@ def _anonimizar_sync(
             raise ErroAnon(exc.codigo, str(exc)) from exc
 
     try:
-        deteccao = detector.detectar(dados)
+        deteccao = detector.detectar(dados, modelo=modelo)
     except detector.ErroDeteccao as exc:
         raise ErroAnon(exc.codigo, str(exc)) from exc
 
@@ -63,7 +66,7 @@ def _anonimizar_sync(
             "Nao foi possivel separar o cabecalho da tabela.",
         )
 
-    analise = validacao.analisar_sensiveis(deteccao)
+    analise = validacao.analisar_sensiveis(deteccao, extras=regioes_extras)
     if analise.conflito:
         raise ErroAnon(
             CodigoFalha.SENSITIVE_FIELD_CONFLICT,
@@ -120,6 +123,7 @@ def _anonimizar_sync(
         )
 
     artefato = ArtefatoAnonimizado(saida, id_opaco=id_opaco)
+    sha_protegido = hashlib.sha256(saida).hexdigest()
     return ResultadoAnonimizacao(
         status=StatusAnonimizacao.APPROVED,
         nome_original=nome_original,
@@ -132,6 +136,13 @@ def _anonimizar_sync(
         verificacao_integridade="ok",
         modelo_versao=deteccao.modelo_versao,
         id_opaco=id_opaco,
+        sha256_protegido=sha_protegido,
+        versao=1,
+        regioes_extras=regioes_extras,
+        regioes_protegidas=tuple(
+            getattr(analise, "regioes_protegidas", ()) or ()
+        ),
+        aviso_ancora=deteccao.aviso_ancora,
     )
 
 
@@ -140,13 +151,22 @@ async def _processar_uma(
     dados: bytes,
     lote: str | None,
     semaforo: asyncio.Semaphore,
+    regioes_extras: tuple[tuple[float, float, float, float], ...] = (),
+    modelo: str | None = None,
 ) -> ResultadoAnonimizacao:
     id_opaco = uuid.uuid4().hex
     inicio = time.monotonic()
     try:
         async with semaforo:
             resultado = await asyncio.wait_for(
-                asyncio.to_thread(_anonimizar_sync, nome, dados, id_opaco),
+                asyncio.to_thread(
+                    _anonimizar_sync,
+                    nome,
+                    dados,
+                    id_opaco,
+                    regioes_extras,
+                    modelo,
+                ),
                 timeout=config.ANON_TIMEOUT_SEG,
             )
     except asyncio.TimeoutError:
@@ -175,8 +195,20 @@ async def _processar_uma(
             nome, exc.codigo, str(exc), id_opaco=id_opaco
         )
     except detector.ErroDeteccao as exc:
-        return ResultadoAnonimizacao.bloqueado(
-            nome, exc.codigo, str(exc), id_opaco=id_opaco
+        logs.warning(
+            "Anonimizacao",
+            f"Detector indisponível (id={id_opaco}): {exc.codigo.value}; "
+            "imagem aguarda tratamento manual.",
+            lote,
+        )
+        return ResultadoAnonimizacao(
+            status=StatusAnonimizacao.PENDING_TREATMENT,
+            nome_original=nome,
+            artefato=None,
+            codigo_falha=exc.codigo,
+            mensagem=str(exc),
+            id_opaco=id_opaco,
+            tratamento_necessario=True,
         )
     except Exception as exc:  # noqa: BLE001
         logs.error(
@@ -204,14 +236,29 @@ async def _processar_uma(
 async def processar_lote(
     imagens: list[tuple[str, bytes]],
     lote: str | None = None,
+    regioes_extras_por_imagem: dict[str, tuple[tuple[float, float, float, float], ...]] | None = None,
+    modelo: str | None = None,
 ) -> list[ResultadoAnonimizacao]:
-    """Anonimiza cada imagem do lote, preservando a ordem de entrada."""
+    """Anonimiza cada imagem do lote, preservando a ordem de entrada.
+
+    ``modelo`` seleciona a regra de limite do recorte. ``None`` mantem o
+    comportamento generico anterior (compatibilidade com chamadas antigas).
+    """
     if not imagens:
         return []
 
     semaforo = asyncio.Semaphore(config.ANON_CONCORRENCIA)
     tarefas = [
-        asyncio.create_task(_processar_uma(nome, dados, lote, semaforo))
+        asyncio.create_task(
+            _processar_uma(
+                nome,
+                dados,
+                lote,
+                semaforo,
+                regioes_extras_por_imagem.get(nome, ()) if regioes_extras_por_imagem else (),
+                modelo,
+            )
+        )
         for nome, dados in imagens
     ]
     return list(await asyncio.gather(*tarefas))
