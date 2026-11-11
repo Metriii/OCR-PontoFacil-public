@@ -30,9 +30,17 @@ from .schemas import (
 class ErroDeteccao(RuntimeError):
     """Falha do modelo estrutural, sempre mapeada para um codigo de bloqueio."""
 
-    def __init__(self, codigo: CodigoFalha, mensagem: str) -> None:
+    def __init__(
+        self,
+        codigo: CodigoFalha,
+        mensagem: str,
+        *,
+        diagnostico: str | None = None,
+    ) -> None:
         super().__init__(mensagem)
         self.codigo = codigo
+        # Apenas para log: rotulos fixos e metricas agregadas, sem texto lido.
+        self.diagnostico = diagnostico
 
 
 _modelo: Any = None
@@ -687,6 +695,14 @@ def _resolver_inicio(
     Os Modelos 1/2/3 usam a ancora especifica do modelo. Se a ancora do
     Modelo 1/3 nao existir (``ANCHOR_NOT_FOUND``), o fallback de rotulos e
     aceito com o aviso ``ANCHOR_FALLBACK``; qualquer outra falha bloqueia.
+
+    Alternativa estrutural (``ANCHOR_GEOMETRIC``), exclusiva de cada modelo:
+
+    - Modelo 1 (variacao sem quinzena): ultimo recurso, depois do fallback de
+      rotulos que ja existia.
+    - Modelo 2: somente quando a ancora textual falha por falta de texto
+      (``recuperavel_por_geometria``); ambiguidades continuam bloqueando.
+    - Modelo 3 (verde): nenhuma alternativa nova; comportamento preservado.
     """
     if modelo not in _MODELOS_COM_ANCORA:
         return _inicio_generico(tabela, caixas_texto), None
@@ -706,13 +722,46 @@ def _resolver_inicio(
             and exc.codigo is CodigoFalha.ANCHOR_NOT_FOUND
         ):
             topo = _detectar_inicio_tabela(tabela, caixas_texto)
-            if topo is None:
-                raise ErroDeteccao(
-                    CodigoFalha.ANCHOR_NOT_FOUND,
-                    "Nao foi possivel localizar o inicio da tabela de ponto.",
-                ) from exc
-            return max(0.0, topo - 4.0), "ANCHOR_FALLBACK"
-        raise ErroDeteccao(exc.codigo, exc.mensagem) from exc
+            if topo is not None:
+                return max(0.0, topo - 4.0), "ANCHOR_FALLBACK"
+            diagnostico = "rotulos=ausentes geometria=nao_aplicavel"
+            if modelo == "modelo-1":
+                avaliacao = ancoras.avaliar_geometria(
+                    modelo,
+                    tabela=tabela,
+                    caixas_texto=caixas_texto,
+                    celulas=celulas,
+                )
+                if avaliacao.ancora is not None:
+                    return (
+                        max(0.0, avaliacao.ancora.y),
+                        ancoras.AVISO_ANCORA_GEOMETRICA,
+                    )
+                diagnostico = f"rotulos=ausentes {avaliacao.resumo()}"
+            raise ErroDeteccao(
+                CodigoFalha.ANCHOR_NOT_FOUND,
+                "Nao foi possivel localizar o inicio da tabela de ponto.",
+                diagnostico=diagnostico,
+            ) from exc
+        diagnostico = "geometria=nao_tentada"
+        if modelo == "modelo-2" and exc.recuperavel_por_geometria:
+            avaliacao = ancoras.avaliar_geometria(
+                modelo,
+                tabela=tabela,
+                caixas_texto=caixas_texto,
+                celulas=celulas,
+            )
+            if avaliacao.ancora is not None:
+                return (
+                    max(0.0, avaliacao.ancora.y),
+                    ancoras.AVISO_ANCORA_GEOMETRICA,
+                )
+            diagnostico = avaliacao.resumo()
+        elif modelo == "modelo-2":
+            diagnostico = "geometria=nao_tentada(falha_nao_recuperavel)"
+        raise ErroDeteccao(
+            exc.codigo, exc.mensagem, diagnostico=diagnostico
+        ) from exc
 
     if ancora is None:
         return _inicio_generico(tabela, caixas_texto), None
