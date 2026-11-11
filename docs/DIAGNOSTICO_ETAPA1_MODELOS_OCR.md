@@ -309,6 +309,8 @@ Comando: `detector.detectar(bytes, modelo=...)` seguido de
 | `alexandre.jpg` | `modelo-4` | 518 | 1, 518, 881, 985¹ | não | 4 (fragmentos de rótulo) | ok (lote) |
 | `ROBERTA.jpg` | `modelo-4` | 453 | 74, 453, 768, 1077 | não | 6 (3 rótulos + 3 fragmentos) | ok |
 | `AMANDA RAFAELE.jpg` | `modelo-2` | 234 | 0, 234, 949, 918² | não | 3 (campos do cabeçalho) | ok |
+| `ALEXANDRE LIMA …jpg` | `modelo-2` | 237 | 21, 237, 943, 900³ | não | 1 (`Assinatura`) | ok |
+| `ALVITH.jpg` | `modelo-2` | 453 | 145, 453, 729, 687³ | não | 4 (3 campos + `Assinatura`) | ok |
 | `CAMILA …png` | `modelo-2` | 124 | 0, 124, 586, 580 | **sim** | 4 (campos do cabeçalho) | ok |
 | `ALEXANDER VICTOR …png` | `modelo-2` | — | — | — | — | **`ANCHOR_NOT_CONFIDENT`** |
 
@@ -323,6 +325,11 @@ recorte é apagada. As 6 redações da ROBERTA são `LOCAL DO TRABALHO`,
 ² a execução de hoje reproduz exatamente a geometria aprovada e persistida no
 lote `5b3041ac0d6d` (`x=0, y=234, w=949, h=918`), o que confirma que o caminho
 do Modelo 2 continua estável para fotos nítidas.
+
+³ idem: `x=21, y=237, w=943, h=900` (ALEXANDRE LIMA) e
+`x=145, y=453, w=729, h=687` (ALVITH), idênticos às geometrias persistidas no
+lote `5b3041ac0d6d`. As três imagens aprovadas daquele lote foram reproduzidas
+sem aviso de âncora, sem conflito e com `validar_recorte` ok.
 
 Observações relevantes:
 
@@ -340,9 +347,10 @@ Observações relevantes:
   como `SENSIVEL` e bloqueia. As 4 redações seriam os campos do cabeçalho
   (`CTPS/Sere`, `Admissão`, `Tipo de Escala`, `Assinatura`). A folha deve
   continuar bloqueada.
-- **Modelo 2 / AMANDA:** foto nítida, âncora textual fecha sem aviso e o
-  recorte reproduz a geometria já aprovada no lote. Serve de caso positivo;
-  ALEXANDER VICTOR é o caso negativo da mesma âncora.
+- **Modelo 2 / AMANDA, ALEXANDRE LIMA e ALVITH:** fotos nítidas; âncora
+  textual fecha sem aviso e o recorte reproduz exatamente as geometrias já
+  aprovadas no lote `5b3041ac0d6d`. São os casos positivos da mesma âncora;
+  ALEXANDER VICTOR é o caso negativo.
 - **Modelo 2 / ALEXANDER VICTOR:** falha **antes do OCR**, na âncora textual.
   O PP-StructureV3 encontrou a tabela, mas `ancora_modelo2` não fechou o
   conjunto de rótulos essenciais e levantou
@@ -360,7 +368,8 @@ Lote `5b3041ac0d6d` — **Modelo 2** (confirmado em `lote.json`), 2026-11-11:
 - 2 × `SENSITIVE_FIELD_CONFLICT`;
 - 2 × `ANCHOR_NOT_CONFIDENT`;
 - apenas as 3 aprovadas foram persistidas (ALEXANDRE LIMA, ALVITH, AMANDA).
-  As 4 bloqueadas não podem ser reprocessadas.
+  As 3 foram reprocessadas hoje e reproduziram exatamente a geometria
+  persistida; as 4 bloqueadas não podem ser reprocessadas.
 
 Lote `2a476a07680f` — **Modelo 4** (confirmado em `lote.json`), 2026-11-11:
 
