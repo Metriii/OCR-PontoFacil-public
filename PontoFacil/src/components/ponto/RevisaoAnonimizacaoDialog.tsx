@@ -1,5 +1,13 @@
-import { useEffect, useState } from "react";
-import { AlertCircle, CheckCircle2, ImageIcon, Loader2, ShieldCheck } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  ImageIcon,
+  Loader2,
+  RefreshCw,
+  ShieldCheck,
+  XCircle,
+} from "lucide-react";
 
 import {
   Dialog,
@@ -9,30 +17,32 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { obterImagemPrevia, type RespostaPrevias } from "@/lib/api";
+import { aprovarPrevia, reprovarPrevia, reprocessarPrevia, type RespostaPrevias } from "@/lib/api";
 
 function Miniatura({ id, nome }: { id: string; nome: string }) {
   const [url, setUrl] = useState<string | null>(null);
   const [erro, setErro] = useState(false);
+  const [carregando, setCarregando] = useState(true);
 
   useEffect(() => {
     if (!id) return;
     const controlador = new AbortController();
-    let criado: string | null = null;
     setUrl(null);
     setErro(false);
-    obterImagemPrevia(id, controlador.signal)
+    setCarregando(true);
+    import("@/lib/api")
+      .then(({ obterImagemPrevia }) => obterImagemPrevia(id, controlador.signal))
       .then((blob) => {
-        criado = URL.createObjectURL(blob);
-        setUrl(criado);
+        setUrl(URL.createObjectURL(blob));
+        setCarregando(false);
       })
       .catch((causa: unknown) => {
         if (causa instanceof DOMException && causa.name === "AbortError") return;
         setErro(true);
+        setCarregando(false);
       });
     return () => {
       controlador.abort();
-      if (criado) URL.revokeObjectURL(criado);
     };
   }, [id]);
 
@@ -44,7 +54,7 @@ function Miniatura({ id, nome }: { id: string; nome: string }) {
       </div>
     );
   }
-  if (!url) {
+  if (carregando || !url) {
     return (
       <div className="flex items-center justify-center gap-2 rounded-lg bg-muted p-8 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -61,11 +71,14 @@ function Miniatura({ id, nome }: { id: string; nome: string }) {
   );
 }
 
+type AcaoItem = "aprovar" | "reprovar" | "reprocessar";
+
 /**
  * Revisão humana da anonimização antes de qualquer chamada ao MCP.
  *
- * Só as imagens marcadas seguem para o OCR externo. As bloqueadas aparecem
- * apenas com o código da falha e nunca podem ser selecionadas.
+ * Somente as imagens explicitamente selecionadas seguem para o OCR externo.
+ * Nenhuma imagem é pré-selecionada. Cada linha tem ações individuais de
+ * aprovar, reprovar e reprocessar.
  */
 export function RevisaoAnonimizacaoDialog({
   aberto,
@@ -81,16 +94,21 @@ export function RevisaoAnonimizacaoDialog({
   onAprovar: (ids: string[]) => void;
 }) {
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
+  const [processando, setProcessando] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!aberto || !previa) return;
-    setSelecionados(
-      new Set(previa.itens.filter((item) => item.status === "aprovada").map((item) => item.id)),
-    );
+    // Nenhuma pré-selecao: o usuario deve marcar explicitamente cada imagem.
+    setSelecionados(new Set());
   }, [aberto, previa]);
 
   const aprovadas = previa?.itens.filter((item) => item.status === "aprovada") ?? [];
-  const bloqueadas = previa?.itens.filter((item) => item.status !== "aprovada") ?? [];
+  const aguardandoTratamento = previa?.itens.filter(
+    (item) => item.status === "aguardando_tratamento"
+  ) ?? [];
+  const bloqueadas = previa?.itens.filter(
+    (item) => item.status !== "aprovada" && item.status !== "aguardando_tratamento"
+  ) ?? [];
 
   const alternar = (id: string) => {
     setSelecionados((atual) => {
@@ -100,6 +118,32 @@ export function RevisaoAnonimizacaoDialog({
       return proximo;
     });
   };
+
+  const estaProcessando = (id: string) => processando.has(id);
+
+  const executarAcao = useCallback(async (id: string, acao: AcaoItem) => {
+    setProcessando((atual) => new Set([...atual, id]));
+    try {
+      if (acao === "aprovar") {
+        await aprovarPrevia(id);
+      } else if (acao === "reprovar") {
+        await reprovarPrevia(id);
+      } else if (acao === "reprocessar") {
+        await reprocessarPrevia(id);
+      }
+    } catch {
+      // Erro ja e exibido pelo hook (aoFalhar). Aqui apenas limpa o estado
+      // de processamento para nao travar o botao.
+    } finally {
+      setProcessando((atual) => {
+        const proximo = new Set(atual);
+        proximo.delete(id);
+        return proximo;
+      });
+    }
+  }, []);
+
+  const selecionadosArray = Array.from(selecionados);
 
   return (
     <Dialog
@@ -115,8 +159,9 @@ export function RevisaoAnonimizacaoDialog({
             Revisar anonimização antes do OCR
           </DialogTitle>
           <DialogDescription className="text-left">
-            Confira se o cabeçalho pessoal foi removido. Somente as imagens marcadas serão enviadas
-            ao serviço externo de OCR.
+            Confira se o cabeçalho pessoal foi removido da imagem. Selecione explicitamente cada
+            imagem que deseja enviar para o serviço externo de OCR. Nenhuma imagem é
+            pré-selecionada.
           </DialogDescription>
         </DialogHeader>
 
@@ -130,14 +175,21 @@ export function RevisaoAnonimizacaoDialog({
         </div>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
-          {aprovadas.length === 0 && bloqueadas.length === 0 && (
-            <p className="rounded-lg bg-muted p-6 text-center text-sm text-muted-foreground">
-              Nenhuma imagem foi processada.
-            </p>
-          )}
+          {
+            aprovadas.length === 0 &&
+            aguardandoTratamento.length === 0 &&
+            bloqueadas.length === 0 && (
+              <p className="rounded-lg bg-muted p-6 text-center text-sm text-muted-foreground">
+                Nenhuma imagem foi processada.
+              </p>
+            )
+          }
 
           {aprovadas.map((item) => {
             const marcado = selecionados.has(item.id);
+            const estadoTexto = item.estado || item.status;
+            const versaoTexto = item.versao ? ` v${item.versao}` : "";
+
             return (
               <div
                 key={item.id}
@@ -148,6 +200,7 @@ export function RevisaoAnonimizacaoDialog({
                     type="checkbox"
                     checked={marcado}
                     onChange={() => alternar(item.id)}
+                    disabled={estaProcessando(item.id)}
                     className="h-4 w-4 accent-[hsl(var(--primary))]"
                   />
                   <span className="flex items-center gap-2 font-medium">
@@ -160,10 +213,105 @@ export function RevisaoAnonimizacaoDialog({
                 </label>
                 <div className="mt-3">
                   <Miniatura id={item.id} nome={item.nome} />
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Estado: {estadoTexto}{versaoTexto}
+                  </p>
+                  <div className="mt-2 flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => executarAcao(item.id, "aprovar")}
+                      disabled={
+                        enviando ||
+                        estaProcessando(item.id) ||
+                        item.status !== "aprovada"
+                      }
+                      className="inline-flex items-center justify-center rounded-lg border border-primary px-2 py-1 text-xs font-medium text-primary transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {estaProcessando(item.id) ? (
+                        <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+                      )}
+                      Aprovar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => executarAcao(item.id, "reprovar")}
+                      disabled={enviando || estaProcessando(item.id)}
+                      className="inline-flex items-center justify-center rounded-lg border border-destructive/40 px-2 py-1 text-xs font-medium text-destructive transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {estaProcessando(item.id) ? (
+                        <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <XCircle className="h-3 w-3" aria-hidden="true" />
+                      )}
+                      Reprovar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => executarAcao(item.id, "reprocessar")}
+                      disabled={enviando || estaProcessando(item.id)}
+                      className="inline-flex items-center justify-center rounded-lg border border-primary px-2 py-1 text-xs font-medium text-primary transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {estaProcessando(item.id) ? (
+                        <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <RefreshCw className="h-3 w-3" aria-hidden="true" />
+                      )}
+                      Reprocessar
+                    </button>
+                  </div>
                 </div>
               </div>
             );
           })}
+
+          {aguardandoTratamento.map((item) => (
+            <div
+              key={item.id}
+              className="rounded-xl border border-warning/40 bg-warning/5 p-4"
+            >
+              <p className="flex items-center gap-2 font-medium text-warning-foreground">
+                <AlertCircle className="h-4 w-4" aria-hidden="true" />
+                {item.nome} — aguardando tratamento
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {item.codigo ? `Código: ${item.codigo}. ` : ""}
+                {item.mensagem || "O tratamento automático não pôde ser executado."}
+                {" "}
+                Reinstale o PaddleOCR/PP-StructureV3 e use Reprocessar para gerar
+                uma nova prévia protegida.
+              </p>
+              <div className="mt-2 flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => executarAcao(item.id, "reprocessar")}
+                  disabled={enviando || estaProcessando(item.id)}
+                  className="inline-flex items-center justify-center rounded-lg border border-warning px-2 py-1 text-xs font-medium text-warning-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {estaProcessando(item.id) ? (
+                    <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <RefreshCw className="h-3 w-3" aria-hidden="true" />
+                  )}
+                  Reprocessar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => executarAcao(item.id, "reprovar")}
+                  disabled={enviando || estaProcessando(item.id)}
+                  className="inline-flex items-center justify-center rounded-lg border border-destructive/40 px-2 py-1 text-xs font-medium text-destructive transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {estaProcessando(item.id) ? (
+                    <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <XCircle className="h-3 w-3" aria-hidden="true" />
+                  )}
+                  Reprovar
+                </button>
+              </div>
+            </div>
+          ))}
 
           {bloqueadas.map((item, indice) => (
             <div
@@ -176,8 +324,8 @@ export function RevisaoAnonimizacaoDialog({
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
                 {item.codigo ? `Código: ${item.codigo}. ` : ""}
-                {item.mensagem || "Não foi possível anonimizar com segurança."} Esta imagem não será
-                enviada ao OCR.
+                {item.mensagem || "Não foi possível anonimizar com segurança."}
+                Esta imagem não será enviada ao OCR.
               </p>
             </div>
           ))}
@@ -202,8 +350,8 @@ export function RevisaoAnonimizacaoDialog({
           </button>
           <button
             type="button"
-            onClick={() => onAprovar(Array.from(selecionados))}
-            disabled={enviando || selecionados.size === 0}
+            onClick={() => onAprovar(selecionadosArray)}
+            disabled={enviando || selecionadosArray.length === 0}
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {enviando ? (
@@ -211,7 +359,7 @@ export function RevisaoAnonimizacaoDialog({
             ) : (
               <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
             )}
-            Enviar {selecionados.size} aprovada(s) para OCR
+            Enviar {selecionadosArray.length} aprovada(s) para OCR
           </button>
         </DialogFooter>
       </DialogContent>

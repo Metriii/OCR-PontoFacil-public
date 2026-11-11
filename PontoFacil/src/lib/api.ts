@@ -1,7 +1,12 @@
-// Integração com a API Python + FastAPI. Configure VITE_API_URL no ambiente.
-export const API_URL: string | undefined =
-  (import.meta.env["VITE_API_URL"] as string | undefined)?.replace(/\/$/, "") || undefined;
-export const isBackendConnected = () => Boolean(API_URL);
+// Integração com a API Python + FastAPI.
+//
+// Base vazia = mesma origem: em desenvolvimento o proxy do Vite encaminha
+// /auth, /processar etc. para http://127.0.0.1:8090. Assim os cookies ficam
+// first-party e o login funciona por localhost e por IPs da rede local.
+// Defina VITE_API_URL apenas para builds que falam direto com o backend.
+export const API_URL: string =
+  (import.meta.env["VITE_API_URL"] as string | undefined)?.trim().replace(/\/$/, "") ?? "";
+export const isBackendConnected = () => true;
 
 export type Registro = {
   id: string;
@@ -117,7 +122,6 @@ function cabecalhosComCsrf(metodo: string, extras?: HeadersInit) {
 
 /** Fetch autenticado: envia cookie de sessao e o header CSRF nas escritas. */
 async function pedirApi(caminho: string, init: RequestInit = {}) {
-  if (!API_URL) throw new Error("Backend não conectado.");
   const metodo = (init.method ?? "GET").toUpperCase();
   return fetch(`${API_URL}${caminho}`, {
     ...init,
@@ -324,7 +328,6 @@ function enviarMultipart<T>(
   cabecalhos: Record<string, string> = {},
 ): Promise<T> {
   return new Promise((resolve, reject) => {
-    if (!API_URL) return reject(new Error("Backend não conectado."));
     const fd = new FormData();
     files.forEach(({ file, path }) => fd.append("arquivos", file, path));
     Object.entries(campos).forEach(([chave, valor]) => fd.append(chave, valor));
@@ -373,10 +376,20 @@ export function processarCartoes(
 export type ItemPreviaAnonimizacao = {
   id: string;
   nome: string;
-  status: "aprovada" | "bloqueada";
+  status:
+    | "aprovada"
+    | "bloqueada"
+    | "processada"
+    | "reprovada"
+    | "falha"
+    | "aguardando_tratamento";
+  estado?: string;
+  versao?: number;
+  sha256_protegido?: string | null;
   codigo?: string | null;
   mensagem?: string | null;
   url_previa?: string | null;
+  tratamento_necessario?: boolean;
 };
 
 export type RespostaPrevias = {
@@ -434,6 +447,54 @@ export async function aprovarAnonimizacao(
   });
   if (!resposta.ok) throw new Error(await mensagemDeErro(resposta));
   return (await resposta.json()) as ResultadoProcessamento;
+}
+
+/** Aprova uma unica previa por imagem (POST /anonimizar/{id}/aprovar). */
+export async function aprovarPrevia(
+  previa_id: string,
+): Promise<{ previa_id: string; estado: string; versao: number }> {
+  const resposta = await pedirApi(`/anonimizar/${encodeURIComponent(previa_id)}/aprovar`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!resposta.ok) throw new Error(await mensagemDeErro(resposta));
+  return (await resposta.json()) as {
+    previa_id: string;
+    estado: string;
+    versao: number;
+  };
+}
+
+/** Reprova uma unica previa (POST /anonimizar/{id}/reprovar). */
+export async function reprovarPrevia(
+  previa_id: string,
+): Promise<{ previa_id: string; estado: string; versao: number }> {
+  const resposta = await pedirApi(`/anonimizar/${encodeURIComponent(previa_id)}/reprovar`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!resposta.ok) throw new Error(await mensagemDeErro(resposta));
+  return (await resposta.json()) as {
+    previa_id: string;
+    estado: string;
+    versao: number;
+  };
+}
+
+/** Reprocessa uma previa reprovada (POST /anonimizar/{id}/reprocessar). */
+export async function reprocessarPrevia(
+  previa_id: string,
+): Promise<{ previa_id: string; estado: string; versao: number }> {
+  const resposta = await pedirApi(`/anonimizar/${encodeURIComponent(previa_id)}/reprocessar`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!resposta.ok) throw new Error(await mensagemDeErro(resposta));
+  return (await resposta.json()) as {
+    previa_id: string;
+    estado: string;
+    versao: number;
+  };
 }
 
 export async function listarRegistros(signal?: AbortSignal): Promise<RegistroPonto[]> {

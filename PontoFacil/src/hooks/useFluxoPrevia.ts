@@ -3,6 +3,9 @@ import { useCallback, useState } from "react";
 import {
   anonimizarCartoes,
   aprovarAnonimizacao,
+  aprovarPrevia,
+  reprovarPrevia,
+  reprocessarPrevia,
   type ModeloId,
   type RespostaPrevias,
   type ResultadoProcessamento,
@@ -23,6 +26,9 @@ type OpcoesFluxo = {
  *
  * ``preparar`` apenas gera as previas; nenhuma imagem chega ao MCP. Só depois
  * de ``aprovar`` o backend envia os artefatos escolhidos para leitura.
+ *
+ * A aprovacao e feita por imagem: o usuario seleciona explicitamente quais
+ * imagens enviar (sem pré-selecionar tudo).
  */
 export function useFluxoPrevia({
   modelo,
@@ -93,12 +99,78 @@ export function useFluxoPrevia({
     [aoConcluir, aoFalhar, aoMudarEtapa, enviando, modelo, previa],
   );
 
+  /** Aprova uma unica previa por imagem (POST /anonimizar/{id}/aprovar). */
+  const aprovarUni = useCallback(
+    async (previaId: string) => {
+      if (!previa || enviando) return;
+      setErro(null);
+      aoFalhar(null);
+      setEnviando(true);
+      try {
+        await aprovarPrevia(previaId);
+      } catch (causa) {
+        const mensagem = causa instanceof Error ? causa.message : "Erro ao aprovar a previa.";
+        setErro(mensagem);
+        aoFalhar(mensagem);
+      } finally {
+        setEnviando(false);
+      }
+    },
+    [enviando, previa],
+  );
+
+  /** Reprova uma unica previa (POST /anonimizar/{id}/reprovar). */
+  const reprovarUni = useCallback(
+    async (previaId: string) => {
+      if (!previa) return;
+      setErro(null);
+      aoFalhar(null);
+      try {
+        await reprovarPrevia(previaId);
+      } catch (causa) {
+        const mensagem = causa instanceof Error ? causa.message : "Erro ao reprovar a previa.";
+        setErro(mensagem);
+        aoFalhar(mensagem);
+      }
+    },
+    [previa],
+  );
+
+  /** Reprocessa uma previa reprovada (POST /anonimizar/{id}/reprocessar). */
+  const reproprocessarUni = useCallback(
+    async (previaId: string) => {
+      if (!previa) return;
+      setErro(null);
+      aoFalhar(null);
+      try {
+        await reprocessarPrevia(previaId);
+      } catch (causa) {
+        const mensagem = causa instanceof Error ? causa.message : "Erro ao reprocessar a previa.";
+        setErro(mensagem);
+        aoFalhar(mensagem);
+      }
+    },
+    [previa],
+  );
+
   const fechar = useCallback(() => setPreviaAberta(false), []);
   const reabrir = useCallback(() => {
     if (previa) setPreviaAberta(true);
   }, [previa]);
 
-  return { previa, previaAberta, enviando, erro, preparar, aprovar, fechar, reabrir };
+  return {
+    previa,
+    previaAberta,
+    enviando,
+    erro,
+    preparar,
+    aprovar,
+    aprovarUni,
+    reprovarUni,
+    reproprocessarUni,
+    fechar,
+    reabrir,
+  };
 }
 
 function gerarChaveIdempotencia(): string {
